@@ -13,7 +13,7 @@ with open(pgn_file_path) as pgn_file:
     while True:
         i += 1
         game = chess.pgn.read_game(pgn_file)
-        if game is None or i > 1000:
+        if game is None:
             break  # End of file
         
         # Extract data from headers
@@ -32,6 +32,7 @@ with open(pgn_file_path) as pgn_file:
         num_moves = len(list(game.mainline_moves()))  # Number of moves
         
         features.append([white_rating, black_rating, num_moves])
+    print(i)
 
 # Convert to a DataFrame
 data = pd.DataFrame(features, columns=["WhiteElo", "BlackElo", "NumMoves"])
