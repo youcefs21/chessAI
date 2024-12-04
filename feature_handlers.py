@@ -201,7 +201,7 @@ def pgn_file_to_dataframe(input_pgn_file_path: str) -> pd.DataFrame:
     """
     game_iter = iterate_games(input_pgn_file_path)
     games = []
-    testing_limit = 10
+    testing_limit = 10  # TODO remove this limit, just test 10 games for now
     for game in game_iter:
         if len(games) > testing_limit:
             break
