@@ -131,6 +131,7 @@ def pgn_game_to_data(game: pgn.Game) -> tuple[list, pd.DataFrame]:
 
 
 def iterate_games(input_pgn_file_path: str) -> Iterable[pgn.Game]:
+    """Iterate over games in a PGN file."""
     with open(input_pgn_file_path) as in_pgn:
         game = pgn.read_game(in_pgn)
 
