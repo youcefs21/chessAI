@@ -18,30 +18,37 @@ else:
     device = torch.device("cpu")
 
 
-class MoveDataset(Dataset):
-    def __init__(self, moves: pd.DataFrame):
-        self.moves = moves
-        self.moves["Board State"] = self.moves.apply(lambda row: fh.board_fen_to_image(row["Board State"]), axis=1)
+# class MoveDataset(Dataset):
+#     def __init__(self, moves: pd.DataFrame):
+#         moves["Board State"] = moves.apply(lambda row: fh.board_fen_to_image(row["Board State"]), axis=1)
+#         self.moves = moves.to_numpy()
 
-    def __len__(self) -> int:
-        return len(self.moves)
+#     def __len__(self) -> int:
+#         return len(self.moves)
 
-    def __getitem__(self, idx: int) -> pd.Series:
-        return self.moves.iloc[idx]
+#     def __getitem__(self, idx: int) -> torch.Tensor:
+#         return self.moves[idx]
+
+
+def moves_to_numpy(moves: pd.DataFrame):
+    moves["Board State"] = moves.apply(lambda row: fh.board_fen_to_image(row["Board State"]), axis=1)
+    return moves.to_numpy()
 
 
 class ChessDataset(Dataset):
     def __init__(self, game_data: pd.DataFrame):
-        self.labels: np.ndarray = game_data["Result"].values
-        self.observations = game_data.drop(columns=["Result"])
+        self.labels = torch.tensor(game_data["Result"].values)
+        game_data = game_data.drop(columns=["Result"])
         # print(self.observations["Moves"])
-        self.observations["Moves"] = self.observations.apply(lambda row: MoveDataset(row["Moves"]), axis=1)
+        game_data["Moves"] = game_data.apply(lambda row: moves_to_numpy(row["Moves"]), axis=1)
+        # game_data["Moves"] = game_data.apply(lambda row: MoveDataset(row["Moves"]), axis=1)
+        self.observations = game_data.to_numpy()
 
     def __len__(self) -> int:
         return len(self.labels)
 
-    def __getitem__(self, idx: int) -> tuple[pd.Series, int]:
-        return self.observations.iloc[idx], self.labels[idx]
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.observations[idx], self.labels[idx]
 
 
 # TESTing dataset
