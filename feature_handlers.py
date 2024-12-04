@@ -1,5 +1,6 @@
-from chess import pgn
+from chess import pgn, Board
 import pandas as pd
+import numpy as np
 
 from typing import Iterable
 
@@ -55,7 +56,7 @@ def filter_headers(game: pgn.Game) -> dict[str, str | int]:
     return game_headers
 
 
-def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | None]:
+def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | None, str]:
     """
     Converts move data to a tuple of the following:
     - SAN (Standard Algebraic Notation) of the move
@@ -94,7 +95,7 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | No
             # Convert string formatted time to seconds
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
-    return move.san(), move.uci(), eval_c, clk_c
+    return move.san(), move.uci(), eval_c, clk_c, move.board().fen()
 
 
 def pgn_game_to_data(game: pgn.Game) -> tuple[list, pd.DataFrame]:
@@ -125,9 +126,51 @@ def pgn_game_to_data(game: pgn.Game) -> tuple[list, pd.DataFrame]:
         moves.append([first_move_player, *move_to_tuple(move)])
         first_move_player = (first_move_player + 1) % 2
 
-    pd_moves = pd.DataFrame(moves, columns=["Player", "Move (SAN)", "Move (UCI)", "Eval", "Time"])
+    pd_moves = pd.DataFrame(moves, columns=["Player", "Move (SAN)", "Move (UCI)", "Eval", "Time", "Board State"])
 
     return game_headers_values, pd_moves
+
+
+PIECE_CHANNELS = {
+    "P": 1,
+    "N": 2,
+    "B": 3,
+    "R": 4,
+    "Q": 5,
+    "K": 6,
+    "p": 7,
+    "n": 8,
+    "b": 9,
+    "r": 10,
+    "q": 11,
+    "k": 12,
+}
+
+
+def board_fen_to_image(board_fen: str):
+    """
+    Preprocess a chess board to a 12-channel image (one channel per piece).
+    Input is the board state expressed as a FEN string.
+
+    There are 12 planes: Each plane corresponds to one type of piece (e.g., white pawn, black rook).
+    """
+    pieces = board_fen.split(" ")[0]
+    rows = pieces.split("/")
+    board = np.zeros((8, 8, 12), dtype=np.float32)
+
+    # Populate piece planes
+    for i, row in enumerate(rows):
+        j = 0
+        for char in row:
+            if char.isdigit():
+                for _ in range(int(char)):
+                    j += 1
+            elif char.isalpha():
+                piece_index = PIECE_CHANNELS[char]
+                board[i, j, piece_index - 1] = 1
+                j += 1
+
+    return board
 
 
 def iterate_games(input_pgn_file_path: str) -> Iterable[pgn.Game]:
