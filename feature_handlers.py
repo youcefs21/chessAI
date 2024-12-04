@@ -1,4 +1,4 @@
-from chess import pgn
+from chess import pgn, Board
 import pandas as pd
 
 from typing import Iterable
@@ -128,6 +128,24 @@ def pgn_game_to_data(game: pgn.Game) -> tuple[list, pd.DataFrame]:
     pd_moves = pd.DataFrame(moves, columns=["Player", "Move (SAN)", "Move (UCI)", "Eval", "Time"])
 
     return game_headers_values, pd_moves
+
+
+def pgn_game_to_boards(game: pgn.Game, num_boards: int = 5) -> list[Board]:
+    """
+    Converts a pgn game to a list of boards.
+    """
+    boards = []
+    moves = []
+    first_move_player = 0
+    for i, move in enumerate(game.mainline()):
+        if i >= num_boards:
+            break
+        boards.append(move.board())
+        moves.append([first_move_player, *move_to_tuple(move)])
+        first_move_player = (first_move_player + 1) % 2
+
+    pd_moves = pd.DataFrame(moves, columns=["Player", "Move (SAN)", "Move (UCI)", "Eval", "Time"])
+    return boards, pd_moves
 
 
 def iterate_games(input_pgn_file_path: str) -> Iterable[pgn.Game]:
