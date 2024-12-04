@@ -7,8 +7,6 @@ input_pgn_file_path = f"OriginalData/{src_file}"
 output_pgn_file_path = f"OriginalData/parsed_{src_file}"
 
 
-dataframes = []
-
 games_with_eval_and_comment = 0
 total_games = 0
 games_with_no_first_move = 0
