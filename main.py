@@ -25,6 +25,8 @@ def main(parent_dir: str, src_file: str) -> None:
     game_data = fh.pgn_file_to_dataframe(temp_test_path)
     game_dataset = ml.ChessDataset(game_data)
 
+    print(game_dataset[0])
+
     # train_set = load_mnist(parent_path, "train")
     # test_set = load_mnist(parent_path, "t10k")
 
