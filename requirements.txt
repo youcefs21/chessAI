@@ -1,0 +1,8 @@
+pandas
+torch
+numpy
+scikit-learn
+python-chess
+pandas-stubs
+matplotlib
+ipykernel
