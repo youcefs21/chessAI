@@ -4,12 +4,22 @@ import numpy as np
 
 from typing import Iterable
 
-HEADERS_TO_KEEP = [
-    "Result",
-    "WhiteElo",
-    "BlackElo",
-    "TimeControl",
-    "Termination",
+HEADERS_TO_KEEP = sorted(
+    [
+        "Result",
+        "WhiteElo",
+        "BlackElo",
+        # "TimeControl", # TODO maybe add these back once we have a working architecture
+        # "Termination",
+    ]
+)
+MOVE_HEADER_NAMES = [
+    "Player",
+    # "Move (SAN)", # This info already in board state
+    # "Move (UCI)",
+    "Eval",
+    "Time",
+    "Board State",
 ]
 
 
@@ -95,7 +105,8 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | No
             # Convert string formatted time to seconds
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
-    return move.san(), move.uci(), eval_c, clk_c, move.board().fen()
+    return eval_c, clk_c, move.board().fen()
+    # return move.san(), move.uci(), eval_c, clk_c, move.board().fen()
 
 
 def pgn_game_to_data(game: pgn.Game) -> tuple[list, pd.DataFrame]:
@@ -126,7 +137,7 @@ def pgn_game_to_data(game: pgn.Game) -> tuple[list, pd.DataFrame]:
         moves.append([first_move_player, *move_to_tuple(move)])
         first_move_player = (first_move_player + 1) % 2
 
-    pd_moves = pd.DataFrame(moves, columns=["Player", "Move (SAN)", "Move (UCI)", "Eval", "Time", "Board State"])
+    pd_moves = pd.DataFrame(moves, columns=MOVE_HEADER_NAMES)
 
     return game_headers_values, pd_moves
 
@@ -156,19 +167,19 @@ def board_fen_to_image(board_fen: str):
     """
     pieces = board_fen.split(" ")[0]
     rows = pieces.split("/")
-    board = np.zeros((8, 8, 12), dtype=np.float32)
+    board = np.zeros((12, 8, 8), dtype=np.float32)
 
     # Populate piece planes
     for i, row in enumerate(rows):
         j = 0
         for char in row:
             if char.isdigit():
-                for _ in range(int(char)):
-                    j += 1
-            elif char.isalpha():
-                piece_index = PIECE_CHANNELS[char]
-                board[i, j, piece_index - 1] = 1
-                j += 1
+                j += int(char)
+                continue
+
+            piece_index = PIECE_CHANNELS[char]
+            board[piece_index - 1, i, j] = 1
+            j += 1
 
     return board
 
@@ -182,3 +193,21 @@ def iterate_games(input_pgn_file_path: str) -> Iterable[pgn.Game]:
             yield game
 
             game = pgn.read_game(in_pgn)
+
+
+def pgn_file_to_dataframe(input_pgn_file_path: str) -> pd.DataFrame:
+    """
+    Converts a PGN file to a DataFrame of game data.
+    """
+    game_iter = iterate_games(input_pgn_file_path)
+    games = []
+    testing_limit = 10
+    for game in game_iter:
+        if len(games) > testing_limit:
+            break
+        game_metadata, game_moves = pgn_game_to_data(game)
+        games.append([*game_metadata, game_moves])
+
+    game_data = pd.DataFrame(games, columns=HEADERS_TO_KEEP + ["Moves"])
+
+    return game_data
