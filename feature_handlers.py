@@ -57,11 +57,11 @@ def filter_headers(game: pgn.Game) -> dict[str, str | int]:
     game_headers["WhiteElo"] = int(game_headers["WhiteElo"])
 
     if game_headers["Result"] == "1-0":
-        game_headers["Result"] = 1
+        game_headers["Result"] = 1 + 1
     elif game_headers["Result"] == "0-1":
-        game_headers["Result"] = -1
+        game_headers["Result"] = -1 + 1
     else:
-        game_headers["Result"] = 0
+        game_headers["Result"] = 0 + 1
 
     return game_headers
 
@@ -201,7 +201,7 @@ def pgn_file_to_dataframe(input_pgn_file_path: str) -> pd.DataFrame:
     """
     game_iter = iterate_games(input_pgn_file_path)
     games = []
-    testing_limit = 2  # TODO remove this limit, just test 10 games for now
+    testing_limit = 30   # TODO remove this limit, just test 10 games for now
     for game in game_iter:
         if len(games) > testing_limit:
             break

@@ -1,6 +1,7 @@
 import pandas as pd
 from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
+import torch
 
 import feature_handlers as fh
 import model_lib as ml
@@ -35,17 +36,28 @@ def main(parent_dir: str, src_file: str) -> None:
     # test_set = load_mnist(parent_path, "t10k")
 
     # Split the train set so we have a held-out validation set
-    train_set_split, validation_set_split = random_split(game_dataset, [2, 1])
+    # Split the dataset into training (80%) and testing (20%)
+    print(len(game_dataset))
+    test_size = int(0.2 * len(game_dataset))
+    train_size = len(game_dataset) - test_size
+    train_data, test_data = random_split(game_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
+    # Define the validation size as 20% of the training data
+    validation_size = int(0.2 * train_size)
+    train_size_split = train_size - validation_size  # Remaining size for training
+
+    # Split the training data into training and validation sets
+    train_set_split, validation_set_split = random_split(train_data, [train_size_split, validation_size], generator=torch.Generator().manual_seed(42))
+    
 
     # Initialize the model and move it to the GPU if available
     model = ml.ChessNN()
     model.to(ml.device)
 
     # Initialize the data loaders, using a batch size of 128
-    batch_size = 1
-    train_loader = DataLoader(train_set_split, batch_size=batch_size)
-    validation_loader = DataLoader(validation_set_split, batch_size=batch_size)
-    # test_loader = DataLoader(test_set, batch_size=128)
+    batch_size = 128
+    train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=ml.collate_fn)
+    validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=ml.collate_fn)
+    test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=ml.collate_fn)
 
     # Train the model
     train_losses, validation_losses = ml.train(
@@ -53,9 +65,12 @@ def main(parent_dir: str, src_file: str) -> None:
         loss_function=nn.CrossEntropyLoss(),
         train_loader=train_loader,
         test_loader=validation_loader,
-        epoch=10,
+        epoch=700,
         learning_rate=0.01,
     )
+
+    ml.plot_eval_results(train_losses,validation_losses)
+    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
 
 
 if __name__ == "__main__":
