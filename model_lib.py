@@ -30,25 +30,42 @@ else:
 #         return self.moves[idx]
 
 
-def moves_to_numpy(moves: pd.DataFrame):
+def moves_to_numpy(moves: pd.Series) -> pd.Series:
     moves["Board State"] = moves.apply(lambda row: fh.board_fen_to_image(row["Board State"]), axis=1)
-    return moves.to_numpy()
+    # print(moves["Board State"].iloc[0].shape)
+    return moves
 
 
 class ChessDataset(Dataset):
     def __init__(self, game_data: pd.DataFrame):
-        self.labels = torch.tensor(game_data["Result"].values)
-        game_data = game_data.drop(columns=["Result"])
-        # print(self.observations["Moves"])
+        self.labels = torch.tensor(game_data["Result"].to_numpy())
+
         game_data["Moves"] = game_data.apply(lambda row: moves_to_numpy(row["Moves"]), axis=1)
+        # moves = game_data["Moves"]
+        # print(moves.iloc[0].columns.values)
+        self.board_states = game_data.apply(lambda row: row["Moves"]["Board State"].to_list(), axis=1)
+        # moves = moves.drop(columns=["Board State"])
+        # self.moves = moves.to_numpy()
+        # print(self.board_states.shape)
+        # print(len(self.board_states))
+        # print(len(self.board_states[0]))
+        # print(len(self.board_states[1]))
+        # print(self.board_states.iloc[0].shape)
+        # print(self.board_states.iloc[0].dtype)
+        self.moves = game_data.apply(lambda row: row["Moves"].drop(columns=["Board State"]).to_numpy(), axis=1).to_numpy()
+        # print(self.board_states)
+        # print(self.moves)
+
         # game_data["Moves"] = game_data.apply(lambda row: MoveDataset(row["Moves"]), axis=1)
-        self.observations = game_data.to_numpy()
+        self.observations = game_data.drop(columns=["Moves", "Result"]).to_numpy()
 
     def __len__(self) -> int:
         return len(self.labels)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.observations[idx], self.labels[idx]
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        # print(self.board_states.shape)
+        # print(self.board_states[idx].shape)
+        return self.observations[idx], self.moves[idx], torch.tensor(self.board_states[idx]), self.labels[idx]
 
 
 # TESTing dataset
@@ -82,8 +99,10 @@ class ChessNN(nn.Module):
 
         self.move_layer = nn.Sequential()
 
-    def forward(self, x):
-        print(x)
+    def forward(self, game_metadata, moves, board_states):
+        print(game_metadata)
+        print(board_states)
+        print(moves)
 
         # Define a view to shape the data input
         # Define the forward pass through layers
@@ -166,15 +185,18 @@ def train(
         # Cumulative loss across all batches for the current epoch (display purposes only)
         current_epoch_train_loss = 0
 
-        for i, (data, target) in enumerate(train_loader):
+        for i, (data, moves, board_states, target) in enumerate(train_loader):
             # Move data to GPU if applicable
-            data, target = data.to(device), target.to(device)
+            data = data.to(device)
+            moves = moves.to(device)
+            board_states = board_states.to(device)
+            target = target.to(device)
 
             # Zero the gradients to prevent interference from previous iterations
             optimizer.zero_grad()
 
             # Predict the data
-            output = model(data)
+            output = model(data, moves, board_states)
             # Calculate the loss
             loss = loss_function(output, target)
             # Backpropagate to update parameters

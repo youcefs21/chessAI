@@ -25,13 +25,17 @@ def main(parent_dir: str, src_file: str) -> None:
     game_data = fh.pgn_file_to_dataframe(temp_test_path)
     game_dataset = ml.ChessDataset(game_data)
 
-    print(game_dataset[0])
+    # print(len(game_dataset[0]))
+    # print(game_dataset[0][0].dtype)
+    # print(game_dataset[0][1].dtype)
+    # print(game_dataset[0][2].dtype)
+    # print(game_dataset[0][3].dtype)
 
     # train_set = load_mnist(parent_path, "train")
     # test_set = load_mnist(parent_path, "t10k")
 
     # Split the train set so we have a held-out validation set
-    train_set_split, validation_set_split = random_split(game_dataset, [10, 1])
+    train_set_split, validation_set_split = random_split(game_dataset, [2, 1])
 
     # Initialize the model and move it to the GPU if available
     model = ml.ChessNN()
