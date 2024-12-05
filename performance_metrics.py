@@ -1,35 +1,68 @@
 import sklearn.metrics
+import numpy as np
 
+# Confusion matrix
+def confusion_matrix(Y_pred, Y_test, labels=[0, 1, 2]):
+    return sklearn.metrics.confusion_matrix(Y_test, Y_pred, labels=labels)
 
-def tp(Y_pred, Y_test) -> int:
-    """Use the confusion matrix to calculate values used in other accuracy metrics. (True Positive)"""
-    conf_mat = sklearn.metrics.confusion_matrix(Y_test, Y_pred, labels=[0, 1])
-    return conf_mat[1, 1]  # Since this is binary classification, we can just use the confusion matrix directly
+# True Positive (per class)
+def tp(Y_pred, Y_test, label) -> int:
+    conf_mat = confusion_matrix(Y_pred, Y_test)
+    return conf_mat[label, label]  # True Positives for the given class
 
+# False Positive (per class)
+def fp(Y_pred, Y_test, label) -> int:
+    conf_mat = confusion_matrix(Y_pred, Y_test)
+    return np.sum(conf_mat[:, label]) - conf_mat[label, label]  # False Positives for the given class
 
-def fp(Y_pred, Y_test) -> int:
-    """Use the confusion matrix to calculate values used in other accuracy metrics. (False Positive)"""
-    conf_mat = sklearn.metrics.confusion_matrix(Y_test, Y_pred, labels=[0, 1])
-    return conf_mat[0, 1]
+# False Negative (per class)
+def fn(Y_pred, Y_test, label) -> int:
+    conf_mat = confusion_matrix(Y_pred, Y_test)
+    return np.sum(conf_mat[label, :]) - conf_mat[label, label]  # False Negatives for the given class
 
+# True Negative (per class)
+def tn(Y_pred, Y_test, label) -> int:
+    conf_mat = confusion_matrix(Y_pred, Y_test)
+    total = np.sum(conf_mat)
+    class_total = np.sum(conf_mat[label, :]) + np.sum(conf_mat[:, label]) - conf_mat[label, label]
+    return total - class_total  # True Negatives for the given class
 
-def fn(Y_pred, Y_test) -> int:
-    """Use the confusion matrix to calculate values used in other accuracy metrics. (False Negative)"""
-    conf_mat = sklearn.metrics.confusion_matrix(Y_test, Y_pred, labels=[0, 1])
-    return conf_mat[1, 0]
+# True Positive Rate (Recall per class)
+def tpr(Y_pred, Y_test, label) -> float:
+    return tp(Y_pred, Y_test, label) / max(1, tp(Y_pred, Y_test, label) + fn(Y_pred, Y_test, label))
 
+# False Positive Rate per class
+def fpr(Y_pred, Y_test, label) -> float:
+    return fp(Y_pred, Y_test, label) / max(1, fp(Y_pred, Y_test, label) + tn(Y_pred, Y_test, label))
 
-def tn(Y_pred, Y_test) -> int:
-    """Use the confusion matrix to calculate values used in other accuracy metrics. (True Negative)"""
-    conf_mat = sklearn.metrics.confusion_matrix(Y_test, Y_pred, labels=[0, 1])
-    return conf_mat[0, 0]
+# Overall Accuracy
+import numpy as np
 
+# Overall Accuracy
+def accuracy(Y_pred, Y_test) -> float:
+    # Ensure the predicted and true labels are numpy arrays (for comparison)
+    Y_pred = np.array(Y_pred)
+    Y_test = np.array(Y_test)
+    
+    # Calculate the number of correct predictions
+    correct = np.sum(Y_pred == Y_test)
+    total = len(Y_test)
+    
+    # Return the accuracy as the ratio of correct predictions to total
+    return correct / total if total > 0 else 0
 
-def tpr(Y_pred, Y_test) -> float:
-    """Calculate the true positive rate (Recall)"""
-    return tp(Y_pred, Y_test) / max(1, tp(Y_pred, Y_test) + fn(Y_pred, Y_test))
-
-
-def fpr(Y_pred, Y_test) -> float:
-    """Calculate the false positive rate"""
-    return fp(Y_pred, Y_test) / max(1, fp(Y_pred, Y_test) + tn(Y_pred, Y_test))
+# Print all metrics for each class (Win, Loss, Draw)
+def print_metrics(Y_pred, Y_test, labels=[0, 1, 2]):
+    # Print Accuracy
+    print(f"Accuracy: {accuracy(Y_pred, Y_test):.4f}")
+    
+    # Print metrics for each class
+    for label in labels:
+        print(f"Class {label}:")
+        print(f"  TP: {tp(Y_pred, Y_test, label)}")
+        print(f"  FP: {fp(Y_pred, Y_test, label)}")
+        print(f"  FN: {fn(Y_pred, Y_test, label)}")
+        print(f"  TN: {tn(Y_pred, Y_test, label)}")
+        print(f"  TPR (Recall): {tpr(Y_pred, Y_test, label)}")
+        print(f"  FPR: {fpr(Y_pred, Y_test, label)}")
+        print()
