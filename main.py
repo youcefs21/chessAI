@@ -11,7 +11,7 @@ import model_lib as ml
 def main(parent_dir: str, src_file: str) -> None:
     torch.manual_seed(42)
     np.random.seed(42)
-    print("Torch available:", torch.cuda.is_available())
+    print("Torch CUDA available:", torch.cuda.is_available())
     # parsed_file_name = f"parsed_{src_file}"
     # feature_file_name = f"features_{src_file}"
     # parsed_path = f"{parent_dir}/{parsed_file_name}"
@@ -28,7 +28,7 @@ def main(parent_dir: str, src_file: str) -> None:
 
     temp_test_path = f"Data/2024-08/xaa.pgn"
     game_data = fh.pgn_file_to_dataframe(temp_test_path)
-    game_dataset = ml.ChessDataset(game_data)
+    game_dataset = ml.ChessDataset(game_data, 10)
 
     # print(len(game_dataset[0]))
     # print(game_dataset[0][0].dtype)
@@ -58,31 +58,39 @@ def main(parent_dir: str, src_file: str) -> None:
     model.to(ml.device)
 
     # Initialize the data loaders, using a batch size of 128
-    batch_size = 128
+    batch_size = 32
     train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=ml.collate_fn)
     validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=ml.collate_fn)
     test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=ml.collate_fn)
 
+    # Calculate class weights
+    class_counts = torch.bincount(torch.tensor([int(label) for label in game_dataset.labels[train_set_split.indices]]))
+    class_weights = 1.0 / class_counts
+    class_weights = class_weights / class_weights.sum()
+    class_weights = class_weights.to(ml.device)
+
+    # Use weighted loss
+    loss_function = nn.CrossEntropyLoss(weight=class_weights)
+
     # Train the model
     train_losses, validation_losses = ml.train(
         model,
-        loss_function=nn.CrossEntropyLoss(),
+        loss_function=loss_function,
         train_loader=train_loader,
         test_loader=validation_loader,
-        epoch=300,
-        learning_rate=0.01,
         print_every=10,
+        epoch=100,
     )
 
     ml.plot_eval_results(train_losses, validation_losses)
     # Kind of a hack, but limit all datasets (including the test set) to 20 moves
     # can be changed multiple times and will change the resulting test loader
-    print("MOVE LIMIT 20")
-    game_dataset.move_limit = 20
+    print("MOVE LIMIT 10")
+    game_dataset.move_limit = 10
     ml.printPerformaceMetrics(model=model, test_loader=test_loader)
-    print("NO MOVE LIMIT")
-    game_dataset.move_limit = None
-    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    # print("NO MOVE LIMIT")
+    # game_dataset.move_limit = None
+    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
 
 
 if __name__ == "__main__":

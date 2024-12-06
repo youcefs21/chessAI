@@ -18,6 +18,9 @@ import performance_metrics as pm
 # Use a GPU if available, to speed things up
 if torch.cuda.is_available():
     device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    print("MPS available")
+    device = torch.device("mps")
 else:
     device = torch.device("cpu")
 
@@ -44,43 +47,32 @@ def moves_to_numpy(moves: pd.Series) -> pd.Series:
 class ChessDataset(Dataset):
     def __init__(self, game_data: pd.DataFrame, only_use_first_X_moves: int | None = None):
         game_data = game_data.dropna()
-        self.labels = torch.tensor(game_data["Result"].to_numpy())
+        self.labels = torch.tensor(game_data["Result"].to_numpy(), dtype=torch.float32)
 
-        game_data["Moves"] = game_data.apply(lambda row: moves_to_numpy(row["Moves"]), axis=1)
-        # moves = game_data["Moves"]
-        # print(moves.iloc[0].columns.values)
+        # Normalize moves data
+        def normalize_moves(moves_df):
+            # Scale Eval using StandardScaler
+            moves_df = moves_df.fillna(0)
+            scaler = StandardScaler()
+            moves_df["Eval"] = scaler.fit_transform(moves_df["Eval"].values.reshape(-1, 1)).flatten()
+            
+            # Normalize Time by dividing by initial time
+            initial_time = moves_df["Time"].iloc[0]
+            moves_df["Time"] = moves_df["Time"] / initial_time
+            
+            # Convert board states
+            moves_df["Board State"] = moves_df.apply(lambda row: fh.board_fen_to_image(row["Board State"]), axis=1)
+            return moves_df
+
+        game_data["Moves"] = game_data.apply(lambda row: normalize_moves(row["Moves"]), axis=1)
+        
         self.board_states = game_data.apply(lambda row: row["Moves"]["Board State"].to_list(), axis=1)
-        # moves = moves.drop(columns=["Board State"])
-        # self.moves = moves.to_numpy()
-        # print(self.board_states.shape)
-        # print(len(self.board_states))
-        # print(len(self.board_states[0]))
-        # print(len(self.board_states[1]))
-        # print(self.board_states.iloc[0].shape)
-        # print(self.board_states.iloc[0].dtype)
         self.moves = game_data.apply(lambda row: row["Moves"].drop(columns=["Board State"]).to_numpy(), axis=1).to_numpy()
-        # print(self.board_states)
-        # print(self.moves)
 
-        # game_data["Moves"] = game_data.apply(lambda row: MoveDataset(row["Moves"]), axis=1)
         self.game_metadata = game_data.drop(columns=["Moves", "Result"]).to_numpy()
 
-        # Check that there are no empty samples
-        # valid_observations = [
-        #     obs for obs in self.observations if len(obs) > 0
-        # ]  # TODO ask muzamil about this? removing this would cause a mismatch in the other parts of the data...
-        # print(valid_observations)
-        # print("Difference in observations:", len(self.observations) - len(valid_observations))
-        # self.observations = np.array(valid_observations)
-        # TODO standard scale the observations
-        # Technically we should only fit on the training data... but okay for now
+        # Scale game metadata
         self.game_metadata = StandardScaler().fit_transform(self.game_metadata)
-
-        # TODO ask muzamil about this? removing this would cause a mismatch in the other parts of the data...
-        # valid_indices = [i for i, row in enumerate(self.board_states) if len(row) > 0 and len(self.moves[i]) > 0]
-        # print("Difference in indices:", len(self.board_states) - len(valid_indices))
-        # self.board_states = self.board_states[valid_indices]
-        # self.moves = self.moves[valid_indices]
 
         self.move_limit = only_use_first_X_moves
 
@@ -88,8 +80,8 @@ class ChessDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        # Convert self.board_states[idx] to a numpy array first, then to a tensor
-        board_state_tensor = torch.tensor(np.array(self.board_states[idx]))
+        # Convert to float32 when creating tensor
+        board_state_tensor = torch.tensor(np.array(self.board_states[idx]), dtype=torch.float32)
         moves = self.moves[idx]
 
         if self.move_limit is not None:
@@ -111,39 +103,53 @@ class ChessNN(nn.Module):
     def __init__(self):
         super().__init__()
 
-        # Define layers
-        # eventually we want output to be for 3 classes - get the probability of  2, 0, or 1 (win, loss, draw)
-        # 12 channels, 8x8 board
+        metadata_per_move = len(fh.MOVE_HEADER_NAMES) - 1
+        metadata_per_game = len(fh.HEADERS_TO_KEEP) - 1
 
-        # cnn_input_dim = [12, 8, 8]
-        # cnn_output_dim = [16, 3, 3]
-        metadata_per_move = len(fh.MOVE_HEADER_NAMES) - 1  # minus 1 since board state is part of cnn
-        metadata_per_game = len(fh.HEADERS_TO_KEEP) - 1  # minus 1 since result is a label
-
-        # CNN for board state
+        # Simplified CNN
         self.board_cnn = nn.Sequential(
-            nn.Conv2d(in_channels=12, out_channels=32, kernel_size=3),  # 8x8 -> 6x6
+            nn.Conv2d(12, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),  # 6x6 -> 3x3
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),  # 3x3 -> 1x1
+            nn.Dropout2d(0.2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Dropout2d(0.2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((2, 2))
         )
 
-        # Fully connected layer to flatten CNN output
-        self.flatten_cnn_output = nn.Linear(64, 128)
+        # Reduced CNN output dimension
+        self.flatten_cnn_output = nn.Linear(128 * 2 * 2, 256)
 
-        # RNN for move sequences
+        # Simplified LSTM
         self.rnn = nn.LSTM(
-            input_size=128 + metadata_per_move,  # CNN features + metadata
+            input_size=256 + metadata_per_move,
             hidden_size=256,
             num_layers=2,
             batch_first=True,
+            bidirectional=True,
+            dropout=0.3
         )
 
-        # Fully connected layer for final prediction
-        self.fc = nn.Linear(256, 128)
-        self.fc2 = nn.Linear(128 + metadata_per_game, 128)
-        self.fc3 = nn.Linear(128, 3)  # Output: [Win, Loss, Draw]
+        # Simplified fully connected layers
+        self.fc = nn.Sequential(
+            nn.Linear(256 * 2, 256),  # *2 because bidirectional
+            nn.ReLU(),
+            nn.Dropout(0.4)
+        )
+        
+        self.fc2 = nn.Sequential(
+            nn.Linear(256 + metadata_per_game, 128),
+            nn.ReLU(),
+            nn.Dropout(0.4)
+        )
+        
+        self.fc3 = nn.Linear(128, 3)
 
     def forward(self, game_metadata, moves, board_states, lengths):
         # Get batch and sequence dimensions
@@ -250,28 +256,25 @@ def train(
     train_loader: DataLoader,
     test_loader: DataLoader,
     epoch: int,
-    learning_rate: float,
+    learning_rate: float = 0.0003,  # Reduced initial learning rate
     print_every: int = 100,
 ) -> tuple[list[float], list[float]]:
-    """Train a nn-based model with stochastic gradient descent.
-
-    Returns the training and testing losses for each epoch."""
-
-    # Record the loss for graphing
     train_losses: list[float] = []
     test_losses = []
 
-    # Select the loss function and optimizer
-    loss_function = loss_function
-    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)  # Increased weight decay
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        factor=0.7,    # More gradual reduction
+        patience=10,    # Wait longer before reducing
+        verbose=True,
+        min_lr=1e-6    # Don't let LR get too small
+    )
 
     for e in range(epoch):
-        # print(f"Starting epoch {e}")
-
-        # Set model to training mode
+        # Training loop remains the same...
         model.train()
-
-        # Cumulative loss across all batches for the current epoch (display purposes only)
         current_epoch_train_loss = 0
 
         for i, (data, moves, board_states, target, lengths) in enumerate(train_loader):
@@ -301,14 +304,22 @@ def train(
 
             current_epoch_train_loss += loss.item()
 
-        # Save average train and test loss for later graphing
-        train_losses.append(current_epoch_train_loss / len(train_loader))
-        test_losses.append(test_loss(model, test_loader, loss_function=loss_function))
+        # Calculate average losses for this epoch
+        avg_train_loss = current_epoch_train_loss / len(train_loader)
+        avg_test_loss = test_loss(model, test_loader, loss_function=loss_function)
+        
+        # Store losses for plotting
+        train_losses.append(avg_train_loss)
+        test_losses.append(avg_test_loss)
+
+        # Step the scheduler based on validation loss
+        scheduler.step(avg_test_loss)
 
         # For debug
         if e % print_every == 0:
-            print(f"Epoch {e} training loss: {train_losses[-1]}")
-            print(f"Epoch {e} testing loss: {test_losses[-1]}")
+            print(f"Epoch {e} training loss: {avg_train_loss}")
+            print(f"Epoch {e} testing loss: {avg_test_loss}")
+            print(f"Current learning rate: {optimizer.param_groups[0]['lr']}")
 
     return train_losses, test_losses
 
@@ -327,8 +338,6 @@ def plot_eval_results(train_losses=[], test_losses=[]):
 
 
 def collate_fn(batch):
-    # Assuming batch is a list of tuples: (data, moves, board_states, labels)
-
     # Extract individual components from the batch
     data = [item[0] for item in batch]
     moves = [item[1] for item in batch]
@@ -347,10 +356,10 @@ def collate_fn(batch):
 
     lengths = torch.tensor([len(bs) for bs in board_states], dtype=torch.int32)
 
-    # Pad sequences to the same length (you could also pad moves if necessary)
-    data_padded = pad_sequence([torch.tensor(d) for d in data], batch_first=True, padding_value=0)
-    moves_padded = pad_sequence([torch.tensor(m) for m in moves], batch_first=True, padding_value=0)
-    board_states_padded = pad_sequence([bs.clone().detach() for bs in board_states], batch_first=True, padding_value=0)
+    # Pad sequences and ensure float32 dtype
+    data_padded = pad_sequence([torch.tensor(d, dtype=torch.float32) for d in data], batch_first=True, padding_value=0)
+    moves_padded = pad_sequence([torch.tensor(m, dtype=torch.float32) for m in moves], batch_first=True, padding_value=0)
+    board_states_padded = pad_sequence([bs.clone().detach().to(torch.float32) for bs in board_states], batch_first=True, padding_value=0)
 
     # Stack labels into a single tensor
     labels_stacked = torch.stack([l.clone().detach() for l in labels])
