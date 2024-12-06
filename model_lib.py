@@ -6,13 +6,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
+from sklearn.preprocessing import StandardScaler
 
 from chess import pgn
 
 from typing import Iterable
 
 import feature_handlers as fh
-import performance_metrics as ph
+import performance_metrics as pm
 
 # Use a GPU if available, to speed things up
 if torch.cuda.is_available():
@@ -41,7 +42,7 @@ def moves_to_numpy(moves: pd.Series) -> pd.Series:
 
 
 class ChessDataset(Dataset):
-    def __init__(self, game_data: pd.DataFrame):
+    def __init__(self, game_data: pd.DataFrame, only_use_first_X_moves: int | None = None):
         game_data = game_data.dropna()
         self.labels = torch.tensor(game_data["Result"].to_numpy())
 
@@ -62,15 +63,26 @@ class ChessDataset(Dataset):
         # print(self.moves)
 
         # game_data["Moves"] = game_data.apply(lambda row: MoveDataset(row["Moves"]), axis=1)
-        self.observations = game_data.drop(columns=["Moves", "Result"]).to_numpy()
+        self.game_metadata = game_data.drop(columns=["Moves", "Result"]).to_numpy()
 
         # Check that there are no empty samples
-        valid_observations = [obs for obs in self.observations if len(obs) > 0]
-        self.observations = np.array(valid_observations)
+        # valid_observations = [
+        #     obs for obs in self.observations if len(obs) > 0
+        # ]  # TODO ask muzamil about this? removing this would cause a mismatch in the other parts of the data...
+        # print(valid_observations)
+        # print("Difference in observations:", len(self.observations) - len(valid_observations))
+        # self.observations = np.array(valid_observations)
+        # TODO standard scale the observations
+        # Technically we should only fit on the training data... but okay for now
+        self.game_metadata = StandardScaler().fit_transform(self.game_metadata)
 
-        valid_indices = [i for i, row in enumerate(self.board_states) if len(row) > 0 and len(self.moves[i]) > 0]
-        self.board_states = self.board_states[valid_indices]
-        self.moves = self.moves[valid_indices]
+        # TODO ask muzamil about this? removing this would cause a mismatch in the other parts of the data...
+        # valid_indices = [i for i, row in enumerate(self.board_states) if len(row) > 0 and len(self.moves[i]) > 0]
+        # print("Difference in indices:", len(self.board_states) - len(valid_indices))
+        # self.board_states = self.board_states[valid_indices]
+        # self.moves = self.moves[valid_indices]
+
+        self.move_limit = only_use_first_X_moves
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -78,8 +90,13 @@ class ChessDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # Convert self.board_states[idx] to a numpy array first, then to a tensor
         board_state_tensor = torch.tensor(np.array(self.board_states[idx]))
-        
-        return self.observations[idx], self.moves[idx], board_state_tensor, self.labels[idx]
+        moves = self.moves[idx]
+
+        if self.move_limit is not None:
+            moves = moves[: self.move_limit]
+            board_state_tensor = board_state_tensor[: self.move_limit]
+
+        return self.game_metadata[idx], moves, board_state_tensor, self.labels[idx]
 
 
 # TESTing dataset
@@ -98,9 +115,10 @@ class ChessNN(nn.Module):
         # eventually we want output to be for 3 classes - get the probability of  2, 0, or 1 (win, loss, draw)
         # 12 channels, 8x8 board
 
-        cnn_input_dim = [12, 8, 8]
-        cnn_output_dim = [16, 3, 3]
+        # cnn_input_dim = [12, 8, 8]
+        # cnn_output_dim = [16, 3, 3]
         metadata_per_move = len(fh.MOVE_HEADER_NAMES) - 1  # minus 1 since board state is part of cnn
+        metadata_per_game = len(fh.HEADERS_TO_KEEP) - 1  # minus 1 since result is a label
 
         # CNN for board state
         self.board_cnn = nn.Sequential(
@@ -110,7 +128,7 @@ class ChessNN(nn.Module):
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3),  # 3x3 -> 1x1
             nn.ReLU(),
         )
-        
+
         # Fully connected layer to flatten CNN output
         self.flatten_cnn_output = nn.Linear(64, 128)
 
@@ -123,7 +141,9 @@ class ChessNN(nn.Module):
         )
 
         # Fully connected layer for final prediction
-        self.fc = nn.Linear(256, 3)  # Output: [Win, Loss, Draw]
+        self.fc = nn.Linear(256, 128)
+        self.fc2 = nn.Linear(128 + metadata_per_game, 128)
+        self.fc3 = nn.Linear(128, 3)  # Output: [Win, Loss, Draw]
 
     def forward(self, game_metadata, moves, board_states, lengths):
         # Get batch and sequence dimensions
@@ -143,10 +163,10 @@ class ChessNN(nn.Module):
         combined_features = torch.cat((cnn_out, moves), dim=2)  # (batch_size, seq_len, 128 + metadata_per_move)
 
         # Pack sequences for RNN
-        packed_features = pack_padded_sequence(combined_features, lengths, batch_first=True, enforce_sorted=False)
+        packed_features = pack_padded_sequence(combined_features, lengths.to("cpu"), batch_first=True, enforce_sorted=False)
 
         # Debugging output
-        #print(f"Packed features shape: {packed_features.data.size()}, LSTM input size: {self.rnn.input_size}")
+        # print(f"Packed features shape: {packed_features.data.size()}, LSTM input size: {self.rnn.input_size}")
 
         # Pass through RNN
         packed_rnn_out, _ = self.rnn(packed_features)
@@ -160,6 +180,10 @@ class ChessNN(nn.Module):
 
         # Final prediction using fully connected layer
         output = self.fc(last_rnn_out)  # (batch_size, output_dim)
+        output = torch.cat((output, game_metadata), dim=1)
+        output = self.fc2(output)
+        output = self.fc3(output)
+
         return output
 
 
@@ -173,14 +197,14 @@ def test_loss(model: nn.Module, test_loader: DataLoader, loss_function: nn.modul
     # No backpropagation calculations needed
     with torch.no_grad():
         for data, moves, board_states, target, lengths in test_loader:
-            
+
             # Move data to GPU if applicable
             data = data.to(device).float()
             moves = moves.to(device).float()
             board_states = board_states.to(device).float()
             lengths = lengths.to(device).float()
             target = target.to(device).long()
-            
+
             model.eval()
 
             # Predict the data, get the loss based on the prediction
@@ -219,6 +243,7 @@ def predict(model: nn.Module, test_loader: DataLoader) -> list[int]:
 
     return predictions
 
+
 def train(
     model: nn.Module,
     loss_function: nn.modules.loss._Loss,
@@ -241,7 +266,7 @@ def train(
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
     for e in range(epoch):
-        #print(f"Starting epoch {e}")
+        # print(f"Starting epoch {e}")
 
         # Set model to training mode
         model.train()
@@ -263,7 +288,7 @@ def train(
             # Predict the data
             output = model(data, moves, board_states, lengths)
 
-            # print(f"Output shape: {output.shape}") 
+            # print(f"Output shape: {output.shape}")
             # print(f"Output sample: {output[0]}")
 
             # Calculate the loss
@@ -320,9 +345,7 @@ def collate_fn(batch):
         if any(val is None for row in bs for val in row):
             print(f"Warning: board_state at index {i} contains None values.")
 
-
-    lengths = torch.tensor([len(bs) for bs in board_states], dtype=torch.long)
-
+    lengths = torch.tensor([len(bs) for bs in board_states], dtype=torch.int32)
 
     # Pad sequences to the same length (you could also pad moves if necessary)
     data_padded = pad_sequence([torch.tensor(d) for d in data], batch_first=True, padding_value=0)
@@ -334,6 +357,7 @@ def collate_fn(batch):
 
     return data_padded, moves_padded, board_states_padded, labels_stacked, lengths
 
+
 def printPerformaceMetrics(model, test_loader):
     y_pred = predict(model, test_loader)  # Get predicted labels
     y_test = []
@@ -343,6 +367,4 @@ def printPerformaceMetrics(model, test_loader):
         y_test.extend(target.tolist())  # Convert target tensor to a list of labels
 
     # Now you can use these for metrics
-    ph.print_metrics(y_pred, y_test)
-
-
+    pm.print_metrics(y_pred, y_test)
