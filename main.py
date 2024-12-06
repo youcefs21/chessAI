@@ -73,24 +73,36 @@ def main(parent_dir: str, src_file: str) -> None:
     loss_function = nn.CrossEntropyLoss(weight=class_weights)
 
     # Train the model
-    train_losses, validation_losses = ml.train(
+    train_losses, validation_losses, train_accuracy, validation_accuracy = ml.train(
         model,
         loss_function=loss_function,
         train_loader=train_loader,
         test_loader=validation_loader,
         print_every=10,
-        epoch=100,
+        learning_rate=0.01,
+        epoch=200,
     )
 
     ml.plot_eval_results(train_losses, validation_losses)
+    ml.plot_eval_results(train_accuracy, validation_accuracy)
     # Kind of a hack, but limit all datasets (including the test set) to 20 moves
     # can be changed multiple times and will change the resulting test loader
+    print("MOVE LIMIT 1")
+    game_dataset.move_limit = 1
+    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    print("MOVE LIMIT 5")
+    game_dataset.move_limit = 5
+    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
     print("MOVE LIMIT 10")
     game_dataset.move_limit = 10
     ml.printPerformaceMetrics(model=model, test_loader=test_loader)
-    # print("NO MOVE LIMIT")
-    # game_dataset.move_limit = None
-    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    print("20 MOVE LIMIT")
+    game_dataset.move_limit = 20
+    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    print("NO MOVE LIMIT")
+    game_dataset.move_limit = None
+    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    # TODO get accuracy on all move limits from 1 to 100
 
 
 if __name__ == "__main__":

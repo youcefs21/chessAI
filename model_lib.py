@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 from sklearn.preprocessing import StandardScaler
 
+import multiprocessing as mp
+
 from chess import pgn
 
 from typing import Iterable
@@ -23,6 +25,10 @@ elif torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
+
+
+def flatten(xss):
+    return [x for xs in xss for x in xs]
 
 
 # class MoveDataset(Dataset):
@@ -55,17 +61,17 @@ class ChessDataset(Dataset):
             moves_df = moves_df.fillna(0)
             scaler = StandardScaler()
             moves_df["Eval"] = scaler.fit_transform(moves_df["Eval"].values.reshape(-1, 1)).flatten()
-            
+
             # Normalize Time by dividing by initial time
             initial_time = moves_df["Time"].iloc[0]
             moves_df["Time"] = moves_df["Time"] / initial_time
-            
+
             # Convert board states
             moves_df["Board State"] = moves_df.apply(lambda row: fh.board_fen_to_image(row["Board State"]), axis=1)
             return moves_df
 
         game_data["Moves"] = game_data.apply(lambda row: normalize_moves(row["Moves"]), axis=1)
-        
+
         self.board_states = game_data.apply(lambda row: row["Moves"]["Board State"].to_list(), axis=1)
         self.moves = game_data.apply(lambda row: row["Moves"].drop(columns=["Board State"]).to_numpy(), axis=1).to_numpy()
 
@@ -120,35 +126,20 @@ class ChessNN(nn.Module):
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((2, 2))
+            nn.AdaptiveAvgPool2d((2, 2)),
         )
 
         # Reduced CNN output dimension
         self.flatten_cnn_output = nn.Linear(128 * 2 * 2, 256)
 
         # Simplified LSTM
-        self.rnn = nn.LSTM(
-            input_size=256 + metadata_per_move,
-            hidden_size=256,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.3
-        )
+        self.rnn = nn.LSTM(input_size=256 + metadata_per_move, hidden_size=256, num_layers=2, batch_first=True, bidirectional=True, dropout=0.3)
 
         # Simplified fully connected layers
-        self.fc = nn.Sequential(
-            nn.Linear(256 * 2, 256),  # *2 because bidirectional
-            nn.ReLU(),
-            nn.Dropout(0.4)
-        )
-        
-        self.fc2 = nn.Sequential(
-            nn.Linear(256 + metadata_per_game, 128),
-            nn.ReLU(),
-            nn.Dropout(0.4)
-        )
-        
+        self.fc = nn.Sequential(nn.Linear(256 * 2, 256), nn.ReLU(), nn.Dropout(0.4))  # *2 because bidirectional
+
+        self.fc2 = nn.Sequential(nn.Linear(256 + metadata_per_game, 128), nn.ReLU(), nn.Dropout(0.4))
+
         self.fc3 = nn.Linear(128, 3)
 
     def forward(self, game_metadata, moves, board_states, lengths):
@@ -261,21 +252,40 @@ def train(
 ) -> tuple[list[float], list[float]]:
     train_losses: list[float] = []
     test_losses = []
+    train_accuracy = []
+    test_accuracy = []
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)  # Increased weight decay
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode='min', 
-        factor=0.7,    # More gradual reduction
-        patience=10,    # Wait longer before reducing
+        optimizer,
+        mode="min",
+        factor=0.7,  # More gradual reduction
+        patience=10,  # Wait longer before reducing
         verbose=True,
-        min_lr=1e-6    # Don't let LR get too small
+        min_lr=1e-6,  # Don't let LR get too small
     )
 
     for e in range(epoch):
         # Training loop remains the same...
         model.train()
         current_epoch_train_loss = 0
+
+        # Run the loss func in a separate thread to hopefully speed things up
+        # test_loss_thread = mp.Process(target=test_loss, args=(model, test_loader, loss_function))
+        # train_accuracy_thread = mp.Process(
+        #     target=pm.accuracy,
+        #     args=(
+        #         predict(model, train_loader),
+        #         flatten([label[3] for label in train_loader]),
+        #     ),
+        # )
+        # test_accuracy_thread = mp.Process(
+        #     target=pm.accuracy,
+        #     args=(
+        #         predict(model, test_loader),
+        #         flatten([label[3] for label in test_loader]),
+        #     ),
+        # )
 
         for i, (data, moves, board_states, target, lengths) in enumerate(train_loader):
             # Move data to GPU if applicable
@@ -307,10 +317,22 @@ def train(
         # Calculate average losses for this epoch
         avg_train_loss = current_epoch_train_loss / len(train_loader)
         avg_test_loss = test_loss(model, test_loader, loss_function=loss_function)
-        
+
         # Store losses for plotting
         train_losses.append(avg_train_loss)
         test_losses.append(avg_test_loss)
+        train_accuracy.append(
+            pm.accuracy(
+                predict(model, train_loader),
+                flatten([label[3] for label in train_loader]),
+            )
+        )
+        test_accuracy.append(
+            pm.accuracy(
+                predict(model, test_loader),
+                flatten([label[3] for label in test_loader]),
+            )
+        )
 
         # Step the scheduler based on validation loss
         scheduler.step(avg_test_loss)
@@ -320,8 +342,10 @@ def train(
             print(f"Epoch {e} training loss: {avg_train_loss}")
             print(f"Epoch {e} testing loss: {avg_test_loss}")
             print(f"Current learning rate: {optimizer.param_groups[0]['lr']}")
+            print(f"Train accuracy: {train_accuracy[-1]}")
+            print(f"Test accuracy: {test_accuracy[-1]}")
 
-    return train_losses, test_losses
+    return train_losses, test_losses, train_accuracy, test_accuracy
 
 
 def plot_eval_results(train_losses=[], test_losses=[]):

@@ -2,6 +2,8 @@ from chess import pgn, Board
 import pandas as pd
 import numpy as np
 
+import multiprocessing as mp
+
 from typing import Iterable
 
 HEADERS_TO_KEEP = sorted(
@@ -53,7 +55,7 @@ def filter_headers(game: pgn.Game) -> dict[str, str | int]:
     """
 
     game_headers: dict[str, str | int] = dict(filter(lambda elem: elem[0] in HEADERS_TO_KEEP, game.headers.items()))
-    game_headers["BlackElo"] = int(game_headers["BlackElo"])
+    game_headers["BlackElo"] = int(game_headers["BlackElo"])  # TODO add these back
     game_headers["WhiteElo"] = int(game_headers["WhiteElo"])
 
     if game_headers["Result"] == "1-0":
@@ -106,6 +108,7 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | No
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
     # return (move.board().fen(),)
+    # return clk_c, move.board().fen()
     return eval_c, clk_c, move.board().fen()
     # return move.san(), move.uci(), eval_c, clk_c, move.board().fen()
 
@@ -196,18 +199,34 @@ def iterate_games(input_pgn_file_path: str) -> Iterable[pgn.Game]:
             game = pgn.read_game(in_pgn)
 
 
+def limit_iterable(iterable: Iterable, limit: int) -> Iterable:
+    for i, elem in enumerate(iterable):
+        if i >= limit:
+            break
+        yield elem
+
+
+def pgn_func(game):
+    game_metadata, game_moves = pgn_game_to_data(game)
+    return [*game_metadata, game_moves]
+
+
 def pgn_file_to_dataframe(input_pgn_file_path: str) -> pd.DataFrame:
     """
     Converts a PGN file to a DataFrame of game data.
     """
     game_iter = iterate_games(input_pgn_file_path)
     games = []
-    testing_limit = 1000  # TODO remove this limit, just test a few games for now
-    for game in game_iter:
-        if len(games) > testing_limit:
-            break
-        game_metadata, game_moves = pgn_game_to_data(game)
-        games.append([*game_metadata, game_moves])
+    testing_limit = 10000  # TODO remove this limit, just test a few games for now
+    game_iter = limit_iterable(game_iter, testing_limit)
+
+    with mp.Pool(mp.cpu_count()) as pool:
+        games = pool.map(pgn_func, game_iter)
+    # for game in game_iter:
+    #     if len(games) > testing_limit:
+    #         break
+    #     game_metadata, game_moves = pgn_game_to_data(game)
+    #     games.append([*game_metadata, game_moves])
 
     game_data = pd.DataFrame(games, columns=HEADERS_TO_KEEP + ["Moves"])
 
