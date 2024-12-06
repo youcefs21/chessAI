@@ -105,6 +105,7 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | No
             # Convert string formatted time to seconds
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
+    # return (move.board().fen(),)
     return eval_c, clk_c, move.board().fen()
     # return move.san(), move.uci(), eval_c, clk_c, move.board().fen()
 
@@ -201,7 +202,7 @@ def pgn_file_to_dataframe(input_pgn_file_path: str) -> pd.DataFrame:
     """
     game_iter = iterate_games(input_pgn_file_path)
     games = []
-    testing_limit = 30   # TODO remove this limit, just test 10 games for now
+    testing_limit = 1000  # TODO remove this limit, just test a few games for now
     for game in game_iter:
         if len(games) > testing_limit:
             break

@@ -2,12 +2,16 @@ import pandas as pd
 from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
 import torch
+import numpy as np
 
 import feature_handlers as fh
 import model_lib as ml
 
 
 def main(parent_dir: str, src_file: str) -> None:
+    torch.manual_seed(42)
+    np.random.seed(42)
+    print("Torch available:", torch.cuda.is_available())
     # parsed_file_name = f"parsed_{src_file}"
     # feature_file_name = f"features_{src_file}"
     # parsed_path = f"{parent_dir}/{parsed_file_name}"
@@ -41,13 +45,13 @@ def main(parent_dir: str, src_file: str) -> None:
     test_size = int(0.2 * len(game_dataset))
     train_size = len(game_dataset) - test_size
     train_data, test_data = random_split(game_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
+    # print(test_data[0][1].shape)
     # Define the validation size as 20% of the training data
     validation_size = int(0.2 * train_size)
     train_size_split = train_size - validation_size  # Remaining size for training
 
     # Split the training data into training and validation sets
     train_set_split, validation_set_split = random_split(train_data, [train_size_split, validation_size], generator=torch.Generator().manual_seed(42))
-    
 
     # Initialize the model and move it to the GPU if available
     model = ml.ChessNN()
@@ -65,11 +69,19 @@ def main(parent_dir: str, src_file: str) -> None:
         loss_function=nn.CrossEntropyLoss(),
         train_loader=train_loader,
         test_loader=validation_loader,
-        epoch=700,
+        epoch=300,
         learning_rate=0.01,
+        print_every=10,
     )
 
-    ml.plot_eval_results(train_losses,validation_losses)
+    ml.plot_eval_results(train_losses, validation_losses)
+    # Kind of a hack, but limit all datasets (including the test set) to 20 moves
+    # can be changed multiple times and will change the resulting test loader
+    print("MOVE LIMIT 20")
+    game_dataset.move_limit = 20
+    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    print("NO MOVE LIMIT")
+    game_dataset.move_limit = None
     ml.printPerformaceMetrics(model=model, test_loader=test_loader)
 
 
