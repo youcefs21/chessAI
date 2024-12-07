@@ -1,9 +1,17 @@
 from huggingface_hub import HfApi
+import logging
+
+logger = logging.getLogger('chessAI')
 
 class ChessDataset:
     def __init__(self):
-        if not HfApi().repo_exists("Youcef/chessData"):
-            print("repo does not exist, creating...")
-            HfApi().create_repo(repo_id="Youcef/chessData", repo_type="dataset")
+        logger.info("Initializing ChessDataset")
+        api = HfApi()
+        repo_id = "Youcef/chessAI"
+        
+        if not api.repo_exists(repo_id):
+            logger.info(f"Repository {repo_id} does not exist, creating...")
+            # api.create_repo(repo_id=repo_id, repo_type="dataset")
+            # logger.info(f"Successfully created repository {repo_id}")
         else:
-            print("repo exists")
+            logger.info(f"Repository {repo_id} already exists")

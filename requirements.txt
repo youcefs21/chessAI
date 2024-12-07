@@ -7,3 +7,4 @@ pandas-stubs
 matplotlib
 ipykernel
 huggingface_hub
+colorlog>=6.7.0
