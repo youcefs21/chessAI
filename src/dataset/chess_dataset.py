@@ -1,8 +1,11 @@
 import os
+from typing import Optional, TextIO
+
 from huggingface_hub import HfApi
 import logging
 import pandas as pd
 from chess import pgn
+from pandas import DataFrame
 from sklearn.model_selection import train_test_split
 import zstandard as zstd
 import io
@@ -28,8 +31,16 @@ logger = logging.getLogger("chessAI")
 
 
 class ChessDataset:
+    df_train: DataFrame
+    df_test: DataFrame
+
     def __init__(self, repo_id="Youcef/chessGames", size=Sizes.smol):
+
         self.size = size
+        self.repo_id = repo_id
+        self._total_games = 0
+        self._invalid_count = 0
+        self._games = []
 
         logger.info("Initializing ChessDataset")
         api = HfApi()
@@ -37,56 +48,82 @@ class ChessDataset:
         # create dataset repo if it doesn't already exist
         if not api.repo_exists(repo_id):
             logger.info(f"Repository {repo_id} does not exist, creating...")
-            # api.create_repo(repo_id=repo_id, repo_type="dataset")
-            # logger.info(f"Successfully created repository {repo_id}")
+            api.create_repo(repo_id=repo_id, repo_type="dataset")
+            logger.info(f"Successfully created repository {repo_id}")
         else:
             logger.info(f"Repository {repo_id} already exists")
 
         # try reading dataset
-        if api.file_exists(repo_id, "train.parquet"):
+        if api.file_exists(repo_id, f"train_{size.name}.parquet"):
             logger.info("Dataset already exists, loading...")
-            self.df_train = pd.read_parquet(f"hf://{repo_id}/train_{size.name}.parquet")
-            self.df_test = pd.read_parquet(f"hf://{repo_id}/test_{size.name}.parquet")
+            self.load_dataset()
         else:
             logger.info("Dataset does not exist, creating...")
             self.create_dataset()
+            self.save_dataset()
+
+    def save_dataset(self):
+        self.df_train.to_parquet(f"hf://{self.repo_id}/train_{self.size.name}.parquet")
+        self.df_test.to_parquet(f"hf://{self.repo_id}/test_{self.size.name}.parquet")
+
+    def load_dataset(self):
+        self.df_train = pd.read_parquet(f"hf://{self.repo_id}/train_{self.size.name}.parquet")
+        self.df_test = pd.read_parquet(f"hf://{self.repo_id}/test_{self.size.name}.parquet")
+
+    def process_stream(self, text_stream: TextIO):
+        while True:
+            game = pgn.read_game(text_stream)
+            if game is None:
+                break
+
+            self._total_games += 1
+            if self._total_games % 1000 == 0:
+                logger.info(f"Read {self._total_games} games. Valid: {len(self._games)}, Invalid: {self._invalid_count}, Ratio: {len(self._games) / (self._invalid_count + 1):.2f}")
+
+            if is_valid_game(game):
+                self._games.append(game)
+            else:
+                self._invalid_count += 1
+
+            if len(self._games) >= self.size.value:
+                return True
+
+        return False
 
     def create_dataset(
         self,
-        path="data/lichess_db_standard_rated_2024-11.pgn.zst",
+        read_compressed=False,
     ):
-        if not os.path.exists(path):
-            logger.error(f"File {path} does not exist")
-            raise FileNotFoundError(f"File {path} does not exist")
 
-        games = []
-        invalid_count = 0
-        total_games = 0
-        with open(path, "rb") as compressed_file:
-            dctx = zstd.ZstdDecompressor()
-            with dctx.stream_reader(compressed_file) as reader:
-                # Wrap the binary stream with TextIOWrapper to get a text stream
-                text_stream = io.TextIOWrapper(reader, encoding="utf-8")
-                while True:
-                    game = pgn.read_game(text_stream)
-                    if game is None:
-                        break
+        done = False
+        if read_compressed:
+            # find compressed file in data/
+            compressed_file = next((file for file in os.listdir("data/") if file.endswith(".zst")), None)
+            if compressed_file is None:
+                logger.error("No compressed file found in data/")
+                raise FileNotFoundError("No compressed file found in data/")
 
-                    total_games += 1
-                    if total_games % 1000 == 0:
-                        logger.info(f"Read {total_games} games. Valid: {len(games)}, Invalid: {invalid_count}, Ratio: {len(games)/(invalid_count+1):.2f}")
+            with open(f"data/{compressed_file}", "rb") as compressed_file:
+                dctx = zstd.ZstdDecompressor()
+                with dctx.stream_reader(compressed_file) as reader:
+                    # Wrap the binary stream with TextIOWrapper to get a text stream
+                    text_stream = io.TextIOWrapper(reader, encoding="utf-8")
+                    done = self.process_stream(text_stream)
+        else:
+            # read all .pgn files in data/ until done
+            done = False
+            for file in os.listdir("data/"):
+                if file.endswith(".pgn"):
+                    logger.info(f"Reading {file}...")
+                    with open(f"data/{file}", "r") as pgn_file:
+                        done = self.process_stream(pgn_file)
 
-                    if is_valid_game(game):
-                        games.append(game)
-                    else:
-                        invalid_count += 1
-
-                    if len(games) >= self.size.value:
-                        break
+                if done:
+                    break
 
         games_pd = []
-        logger.info(f"Preprocessing {len(games)} games...")
-        for i, game in enumerate(games):
+        logger.info(f"Preprocessing {len(self._games)} games...")
+        for i, game in enumerate(self._games):
             games_pd.append(preprocess_game(game))
             if (i + 1) % 500 == 0:
                 logger.info(f"Preprocessed {i + 1} games")

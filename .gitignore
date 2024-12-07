@@ -6,3 +6,4 @@ logs/
 *.log
 
 *.pgn.zst
+*.pgn

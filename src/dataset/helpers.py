@@ -7,6 +7,8 @@ from chess import pgn
 MOVE_HEADER_NAMES = [
     "Player",
     "Time",
+    "Eval",
+    "Raw Eval",
     "Board State",
 ]
 
@@ -15,7 +17,7 @@ HEADERS_TO_KEEP = ["Result", "WhiteElo", "BlackElo"]
 
 def move_to_tuple(
     move: pgn.ChildNode,
-) -> tuple[float, str]:
+) -> tuple[float, Optional[float], Optional[str], str]:
     """
     Converts move data to a tuple of the following:
     - SAN (Standard Algebraic Notation) of the move
@@ -30,14 +32,32 @@ def move_to_tuple(
     split_comment = move.comment.split("] [")
 
     # If no eval or clk data, will show up as None/NaN
+    eval_c: Optional[float] = None
     clk_c: Optional[int] = None
+    eval_c_s: Optional[str] = None
     for c in split_comment:
+        if "eval" in c:
+            eval_c_s = c.replace("]", "").replace("[", "").split(" ")[1]
+            if "#" not in eval_c_s:
+                eval_c = float(eval_c_s)
+                continue
+
+            # If a side has mate in x moves, they automatically get a min. rating of 40
+            # Otherwise, less moves till mate => higher advantage for that side
+            # (Somewhat arbitrarily chosen number)
+            mate_in = eval_c_s.split("#")[1].replace("-", "")
+            eval_c = max(320 - float(mate_in) * 10, 40)
+
+            if "-" in eval_c_s:
+                eval_c = -eval_c
+            continue
+
         if "clk" in c:
             clk_c_s = c.replace("]", "").replace("[", "").split(" ")[1]
             # Convert string formatted time to seconds
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
-    return clk_c / 60, move.board().fen()
+    return clk_c / 60, eval_c, eval_c_s, move.board().fen()
 
 
 def preprocess_game(game: Game):
