@@ -11,7 +11,7 @@ import zstandard as zstd
 import io
 from enum import Enum
 
-from src.dataset.helpers import is_valid_game, preprocess_game, HEADERS_TO_KEEP
+from src.dataset.helpers import is_valid_game, preprocess_game, HEADERS
 
 
 class Sizes(Enum):
@@ -46,7 +46,7 @@ class ChessDataset:
         api = HfApi()
 
         # create dataset repo if it doesn't already exist
-        if not api.repo_exists(repo_id):
+        if not api.repo_exists(repo_id, repo_type="dataset"):
             logger.info(f"Repository {repo_id} does not exist, creating...")
             api.create_repo(repo_id=repo_id, repo_type="dataset")
             logger.info(f"Successfully created repository {repo_id}")
@@ -63,12 +63,12 @@ class ChessDataset:
             self.save_dataset()
 
     def save_dataset(self):
-        self.df_train.to_parquet(f"hf://{self.repo_id}/train_{self.size.name}.parquet")
-        self.df_test.to_parquet(f"hf://{self.repo_id}/test_{self.size.name}.parquet")
+        self.df_train.to_parquet(f"hf://datasets/{self.repo_id}/train_{self.size.name}.parquet")
+        self.df_test.to_parquet(f"hf://datasets/{self.repo_id}/test_{self.size.name}.parquet")
 
     def load_dataset(self):
-        self.df_train = pd.read_parquet(f"hf://{self.repo_id}/train_{self.size.name}.parquet")
-        self.df_test = pd.read_parquet(f"hf://{self.repo_id}/test_{self.size.name}.parquet")
+        self.df_train = pd.read_parquet(f"hf://datasets/{self.repo_id}/train_{self.size.name}.parquet")
+        self.df_test = pd.read_parquet(f"hf://datasets/{self.repo_id}/test_{self.size.name}.parquet")
 
     def process_stream(self, text_stream: TextIO):
         while True:
@@ -128,7 +128,7 @@ class ChessDataset:
             if (i + 1) % 500 == 0:
                 logger.info(f"Preprocessed {i + 1} games")
 
-        game_data = pd.DataFrame(games_pd, columns=HEADERS_TO_KEEP + ["Moves"])
+        game_data = pd.DataFrame(games_pd, columns=HEADERS)
 
         # split into train and test
         split_size = 0.2

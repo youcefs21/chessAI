@@ -4,15 +4,18 @@ from chess.pgn import Game
 import pandas as pd
 from chess import pgn
 
-MOVE_HEADER_NAMES = [
+HEADERS = [
+    # Game headers
+    "Result",
+    "WhiteElo",
+    "BlackElo",
+    # Move headers
     "Player",
     "Time",
     "Eval",
     "Raw Eval",
     "Board State",
 ]
-
-HEADERS_TO_KEEP = ["Result", "WhiteElo", "BlackElo"]
 
 
 def move_to_tuple(
@@ -61,20 +64,29 @@ def move_to_tuple(
 
 
 def preprocess_game(game: Game):
-    game_headers = [
-        1 if game.headers.get("Result") == "1-0" else 0,
-        int(game.headers.get("WhiteElo")),
-        int(game.headers.get("BlackElo")),
-    ]
-    moves = []
+    # Get game headers
+    result = 1 if game.headers.get("Result") == "1-0" else 0
+    white_elo = int(game.headers.get("WhiteElo"))
+    black_elo = int(game.headers.get("BlackElo"))
+
+    # Initialize game data dictionary
+    game_data = {"Result": result, "WhiteElo": white_elo, "BlackElo": black_elo, "Player": [], "Time": [], "Eval": [], "Raw Eval": [], "Board State": []}
+
     first_move_player = 0
     for move in game.mainline():
-        moves.append([first_move_player, *move_to_tuple(move)])
+        time, eval_c, raw_eval, board_state = move_to_tuple(move)
+
+        # Append each value to its respective list in the dict
+        game_data["Player"].append(first_move_player)
+        game_data["Time"].append(time)
+        game_data["Eval"].append(eval_c)
+        game_data["Raw Eval"].append(raw_eval)
+        game_data["Board State"].append(board_state)
+
         first_move_player = (first_move_player + 1) % 2
 
-    pd_moves = pd.DataFrame(moves, columns=MOVE_HEADER_NAMES)
-
-    return [*game_headers, pd_moves]
+    # Convert dict to list using HEADERS order
+    return [game_data[header] for header in HEADERS]
 
 
 def is_valid_game(game: Game) -> bool:
@@ -97,4 +109,5 @@ def is_valid_game(game: Game) -> bool:
         and time.delay == 0
         # make sure the clock for each turn is present
         and "clk" in first_move.comment
+        and "eval" in first_move.comment
     )
