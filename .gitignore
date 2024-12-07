@@ -4,3 +4,5 @@
 # Logs
 logs/
 *.log
+
+*.pgn.zst
