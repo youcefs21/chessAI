@@ -7,3 +7,4 @@ logs/
 
 *.pgn.zst
 *.pgn
+__pycache__/

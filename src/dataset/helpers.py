@@ -1,7 +1,6 @@
-from typing import Optional, Tuple
+from typing import Optional
 
 from chess.pgn import Game
-import pandas as pd
 from chess import pgn
 
 HEADERS = [
@@ -14,13 +13,54 @@ HEADERS = [
     "Time",
     "Eval",
     "Raw Eval",
-    "Board State",
+    "Board",
 ]
+
+PIECE_CHANNELS = {
+    "P": 1,
+    "N": 2,
+    "B": 3,
+    "R": 4,
+    "Q": 5,
+    "K": 6,
+    "p": 7,
+    "n": 8,
+    "b": 9,
+    "r": 10,
+    "q": 11,
+    "k": 12,
+}
+
+
+def board_fen_to_image(board_fen: str):
+    """
+    Preprocess a chess board to a 12-channel image (one channel per piece).
+    Input is the board state expressed as a FEN string.
+
+    There are 12 planes: Each plane corresponds to one type of piece (e.g., white pawn, black rook).
+    """
+    pieces = board_fen.split(" ")[0]
+    rows = pieces.split("/")
+    board = [[[0 for _ in range(8)] for _ in range(8)] for _ in range(12)]
+
+    # Populate piece planes
+    for i, row in enumerate(rows):
+        j = 0
+        for char in row:
+            if char.isdigit():
+                j += int(char)
+                continue
+
+            piece_index = PIECE_CHANNELS[char]
+            board[piece_index - 1][i][j] = 1
+            j += 1
+
+    return board
 
 
 def move_to_tuple(
     move: pgn.ChildNode,
-) -> tuple[float, Optional[float], Optional[str], str]:
+) -> tuple[float, float | None, str | None, list[list[list[int]]]]:
     """
     Converts move data to a tuple of the following:
     - SAN (Standard Algebraic Notation) of the move
@@ -46,7 +86,7 @@ def move_to_tuple(
                 continue
 
             # If a side has mate in x moves, they automatically get a min. rating of 40
-            # Otherwise, less moves till mate => higher advantage for that side
+            # Otherwise, fewer moves till mate => higher advantage for that side
             # (Somewhat arbitrarily chosen number)
             mate_in = eval_c_s.split("#")[1].replace("-", "")
             eval_c = max(320 - float(mate_in) * 10, 40)
@@ -60,7 +100,7 @@ def move_to_tuple(
             # Convert string formatted time to seconds
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
-    return clk_c / 60, eval_c, eval_c_s, move.board().fen()
+    return clk_c / 60, eval_c, eval_c_s, board_fen_to_image(move.board().fen())
 
 
 def preprocess_game(game: Game):
@@ -70,7 +110,7 @@ def preprocess_game(game: Game):
     black_elo = int(game.headers.get("BlackElo"))
 
     # Initialize game data dictionary
-    game_data = {"Result": result, "WhiteElo": white_elo, "BlackElo": black_elo, "Player": [], "Time": [], "Eval": [], "Raw Eval": [], "Board State": []}
+    game_data = {"Result": result, "WhiteElo": white_elo, "BlackElo": black_elo, "Player": [], "Time": [], "Eval": [], "Raw Eval": [], "Board": []}
 
     first_move_player = 0
     for move in game.mainline():
@@ -81,7 +121,7 @@ def preprocess_game(game: Game):
         game_data["Time"].append(time)
         game_data["Eval"].append(eval_c)
         game_data["Raw Eval"].append(raw_eval)
-        game_data["Board State"].append(board_state)
+        game_data["Board"].append(board_state)
 
         first_move_player = (first_move_player + 1) % 2
 

@@ -30,7 +30,7 @@ class Sizes(Enum):
 logger = logging.getLogger("chessAI")
 
 
-class ChessDataset:
+class ChessDataFrame:
     df_train: DataFrame
     df_test: DataFrame
 
@@ -54,7 +54,7 @@ class ChessDataset:
             logger.info(f"Repository {repo_id} already exists")
 
         # try reading dataset
-        if api.file_exists(repo_id, f"train_{size.name}.parquet"):
+        if api.file_exists(repo_id, f"train_{size.name}.parquet", repo_type="dataset"):
             logger.info("Dataset already exists, loading...")
             self.load_dataset()
         else:

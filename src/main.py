@@ -1,6 +1,6 @@
 import torch
 
-from dataset.chess_dataset import ChessDataset
+from dataset.chess_dataframe import ChessDataFrame
 from logging_config import setup_logging
 
 # Setup logging
@@ -10,5 +10,5 @@ device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if 
 logger.info(f"Using device: {device}")
 
 # I need to make csv batches of data and uploads it to huggingface
-dataset = ChessDataset()
+chess_df = ChessDataFrame()
 logger.info("Successfully initialized ChessDataset")

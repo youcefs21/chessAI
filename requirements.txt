@@ -10,3 +10,4 @@ huggingface_hub
 colorlog>=6.7.0
 zstandard
 pyarrow
+wandb
