@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import pickle
-from train import ChessDataset, collate_fn, pgn_file_to_dataframe, accuracy, predict, get_data_loaders
+from train import ChessDataset, ChessNN, collate_fn, pgn_file_to_dataframe, accuracy, predict, get_data_loaders
 from torch.utils.data import DataLoader
 import sklearn.metrics
 import matplotlib.pyplot as plt
@@ -258,16 +258,20 @@ def plot_confusion_matrix(y_true, y_pred, title='Confusion Matrix'):
     
     return fig
 
+def load_model(path: str) -> ChessNN:
+    """Load a saved model"""
+    model = ChessNN()
+    model.load_state_dict(torch.load(path))
+    model.eval()  # Set to evaluation mode
+    return model
+
 if __name__ == "__main__":
-    MODEL_PATH = "model.pkl"
+    MODEL_PATH = "model.pt"
     TEST_DATA_PATH = "Data/2024-08/xaa.pgn"
     
     try:
         # load model and create initial test loader
-        with open(MODEL_PATH, "rb") as f:
-            model = pickle.load(f)
-        model.to(device)
-        model.eval()
+        model = load_model(MODEL_PATH)
         
         # load data
         game_data = pgn_file_to_dataframe(TEST_DATA_PATH)

@@ -449,10 +449,9 @@ def train(
             print(f"test accuracy: {test_accuracy[-1]}")
 
     
-    # save the model to a pickle file
-    model_save_path = "model.pkl"
-    with open(model_save_path, "wb") as f:
-        pickle.dump(model, f)
+    # Replace the pickle save with torch.save for the state dict
+    model_save_path = "model.pt"
+    torch.save(model.state_dict(), model_save_path)
     print(f"Model saved to {model_save_path}")
 
     return train_losses, test_losses, train_accuracy, test_accuracy
