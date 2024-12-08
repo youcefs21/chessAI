@@ -164,6 +164,7 @@ def pgn_file_to_dataframe(input_pgn_file_path: str, limit: int = 10000) -> pd.Da
         games = pool.map(pgn_game_to_data, game_iter)
     print("Data loaded.")
 
+    # Same as above but sequentially, kept for reference
     # for i, game in enumerate(game_iter):
     #     games.append(pgn_game_to_data(game))
     #     if (i + 1) % 1000 == 0:

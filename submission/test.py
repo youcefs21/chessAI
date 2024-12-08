@@ -255,7 +255,7 @@ def plot_confusion_matrix(y_true, y_pred, title="Confusion Matrix"):
 def load_model(path: str) -> ChessNN:
     """Load a saved model"""
     model = ChessNN()
-    model.load_state_dict(torch.load(path, weights_only=True))
+    model.load_state_dict(torch.load(path, map_location=torch.device("cpu"), weights_only=True))
     model.eval()  # Set to evaluation mode
     return model
 
