@@ -7,7 +7,6 @@ import numpy as np
 from chess import pgn
 from sklearn.preprocessing import StandardScaler
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
-import multiprocessing as mp
 
 # use a gpu if available, to speed things up
 if torch.cuda.is_available():

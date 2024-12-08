@@ -7,6 +7,15 @@ from torch.utils.data import DataLoader
 import sklearn.metrics
 import matplotlib.pyplot as plt
 
+# use same device configuration as training
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    print("mps available")
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
 
 # Confusion matrix
 def confusion_matrix(Y_pred, Y_test, labels=[0, 1, 2]):
@@ -75,76 +84,66 @@ def print_metrics(Y_pred, Y_test, labels=[0, 1, 2]):
     print(metrics.round(4))
 
 
-# use same device configuration as training
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    print("mps available")
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
+# def test_model(model_path: str, test_data_path: str) -> float:
+#     """
+#     Load and test the saved model
+
+#     Args:
+#         model_path: Path to the saved pickle model file
+#         test_data_path: Path to test data PGN file
+
+#     Returns:
+#         float: Test accuracy
+#     """
+#     # Load the model
+#     with open(model_path, "rb") as f:
+#         model = pickle.load(f)
+#     model.to(device)
+#     model.eval()
+
+#     # Load and preprocess test data
+#     game_data = pgn_file_to_dataframe(test_data_path, 1000)
+#     test_dataset = ChessDataset(game_data, 10)
+
+#     # Create test dataloader
+#     test_loader = DataLoader(test_dataset, batch_size=128, collate_fn=collate_fn)
+
+#     # Test the model
+#     all_predictions = []
+#     all_labels = []
+
+#     with torch.no_grad():
+#         for data, moves, board_states, labels, lengths in test_loader:
+#             # Move data to device
+#             data = data.to(device).float()
+#             moves = moves.to(device).float()
+#             board_states = board_states.to(device).float()
+#             lengths = lengths.to(device).float()
+#             labels = labels.to(device)
+
+#             # Get predictions
+#             outputs = model(data, moves, board_states, lengths)
+#             _, predicted = torch.max(outputs.data, 1)
+
+#             # Store predictions and labels
+#             all_predictions.extend(predicted.cpu().numpy())
+#             all_labels.extend(labels.cpu().numpy())
+
+#     # Calculate accuracy
+#     test_accuracy = accuracy(all_predictions, all_labels)
+#     return test_accuracy
 
 
-def test_model(model_path: str, test_data_path: str) -> float:
-    """
-    Load and test the saved model
+# def printPerformaceMetrics(model, test_loader):
+#     y_pred = predict(model, test_loader)  # Get predicted labels
+#     y_test = []
 
-    Args:
-        model_path: Path to the saved pickle model file
-        test_data_path: Path to test data PGN file
+#     # Extract ground truth labels and flatten them
+#     for data, moves, board_states, target, lengths in test_loader:
+#         y_test.extend(target.tolist())  # Convert target tensor to a list of labels
 
-    Returns:
-        float: Test accuracy
-    """
-    # Load the model
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
-    model.to(device)
-    model.eval()
-
-    # Load and preprocess test data
-    game_data = pgn_file_to_dataframe(test_data_path, 1000)
-    test_dataset = ChessDataset(game_data, 10)
-
-    # Create test dataloader
-    test_loader = DataLoader(test_dataset, batch_size=128, collate_fn=collate_fn)
-
-    # Test the model
-    all_predictions = []
-    all_labels = []
-
-    with torch.no_grad():
-        for data, moves, board_states, labels, lengths in test_loader:
-            # Move data to device
-            data = data.to(device).float()
-            moves = moves.to(device).float()
-            board_states = board_states.to(device).float()
-            lengths = lengths.to(device).float()
-            labels = labels.to(device)
-
-            # Get predictions
-            outputs = model(data, moves, board_states, lengths)
-            _, predicted = torch.max(outputs.data, 1)
-
-            # Store predictions and labels
-            all_predictions.extend(predicted.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-
-    # Calculate accuracy
-    test_accuracy = accuracy(all_predictions, all_labels)
-    return test_accuracy
-
-
-def printPerformaceMetrics(model, test_loader):
-    y_pred = predict(model, test_loader)  # Get predicted labels
-    y_test = []
-
-    # Extract ground truth labels and flatten them
-    for data, moves, board_states, target, lengths in test_loader:
-        y_test.extend(target.tolist())  # Convert target tensor to a list of labels
-
-    # Now you can use these for metrics
-    print_metrics(y_pred, y_test)
+#     # Now you can use these for metrics
+#     print_metrics(y_pred, y_test)
 
 
 def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_dataset):
