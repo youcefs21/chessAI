@@ -7,11 +7,11 @@ from models.rnn_cnn import ChessNN
 from torch.utils.data import DataLoader, random_split
 
 from models.rnn_cnn_helpers import collate_fn
-from models.simple_rnn import train_rnn
+from models.simple_rnn import train_rnn, evaluate_model
 
 # consts
 batch_size = 32
-size = Sizes.mid
+size = Sizes.smol
 train_size = size.value * 0.8
 validation_size = int(0.2 * train_size)
 train_size_split = train_size - validation_size
@@ -26,7 +26,11 @@ logger.info(f"Using device: {device}")
 chess_df = ChessDataFrame(size=size)
 logger.info("Successfully initialized ChessDataFrame")
 
-rnn = train_rnn(chess_df.df_train, 20)
+rnn = train_rnn(chess_df.df_train, 40)
+
+metrics = evaluate_model(rnn, chess_df.df_test, "Chess RNN Evaluation")
+logger.info(metrics)
+
 
 # Initialize datasets
 # train_dataset = ChessDataset(chess_df.df_train, move_limit=10)

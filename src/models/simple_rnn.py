@@ -5,6 +5,7 @@
 # so 143 with these extra features
 
 import logging
+import keras
 import pandas as pd
 import numpy as np
 from keras import Sequential
@@ -13,6 +14,10 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 import math
 import matplotlib.pyplot as plt
+from keras.layers import Dropout
+from keras.regularizers import l2
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
 
 PIECE_CHANNELS = {
     "P": 0,
@@ -80,9 +85,9 @@ def encode_ucis(ucis):
 
 def preprocess_data(data):
     # Normalize Elo ratings
-    elo_data = data[['WhiteElo', 'BlackElo']].values
+    elo_data = data[["WhiteElo", "BlackElo"]].values
     normalized_elos = ELO_SCALER.fit_transform(elo_data)
-    
+
     # Existing preprocessing
     players = data["Player"].apply(aint).to_numpy()
     moving_pieces = data["MovingPiece"].apply(encode_piece).to_numpy()
@@ -97,16 +102,10 @@ def preprocess_data(data):
     for i in range(len(players)):
         # Create array of normalized Elos for this game
         game_elos = np.tile(normalized_elos[i], (len(players[i]), 1))
-        
+
         # Concatenate all features including Elos
-        game_features = np.concatenate([
-            players[i],              # Player info
-            moving_pieces[i],        # Moving piece info
-            captured_pieces[i],      # Captured piece info
-            uci_moves[i],           # UCI move encoding
-            game_elos               # Normalized Elo ratings (2 values per move)
-        ], axis=1)
-        
+        game_features = np.concatenate([players[i], moving_pieces[i], captured_pieces[i], uci_moves[i], game_elos], axis=1)  # Player info  # Moving piece info  # Captured piece info  # UCI move encoding  # Normalized Elo ratings (2 values per move)
+
         games.append(game_features)
 
     return games, results
@@ -124,13 +123,55 @@ class ChessRNN:
 
     def build_model(self, input_shape):
         """
-        Build the RNN model architecture
-        input_shape: (sequence_length, features_per_move)
+        Build the RNN model architecture with improved stability
         """
         logger.info(f"Building model with input shape {input_shape}")
-        self.model = Sequential([SimpleRNN(64, input_shape=input_shape, return_sequences=True), SimpleRNN(32), Dense(16, activation="relu"), Dense(1, activation="sigmoid")])  # Binary classification (win/loss)
-
-        self.model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+        
+        # Create model with Input layer explicitly
+        inputs = keras.Input(shape=input_shape)
+        x = Dropout(0.1)(inputs)
+        
+        # First RNN layer
+        x = SimpleRNN(128, 
+                    return_sequences=True,
+                    kernel_regularizer=l2(0.001),
+                    recurrent_regularizer=l2(0.001),
+                    kernel_initializer='glorot_uniform',
+                    recurrent_initializer='orthogonal',
+                    activation='tanh')(x)
+        x = Dropout(0.2)(x)
+        
+        # Second RNN layer
+        x = SimpleRNN(64,
+                    kernel_regularizer=l2(0.001),
+                    recurrent_regularizer=l2(0.001),
+                    kernel_initializer='glorot_uniform',
+                    recurrent_initializer='orthogonal',
+                    activation='tanh')(x)
+        x = Dropout(0.2)(x)
+        
+        # Dense layers
+        x = Dense(32, activation="relu", kernel_regularizer=l2(0.001))(x)
+        x = Dropout(0.1)(x)
+        x = Dense(16, activation="relu", kernel_regularizer=l2(0.001))(x)
+        outputs = Dense(1, activation="sigmoid")(x)
+        
+        self.model = keras.Model(inputs=inputs, outputs=outputs)
+        
+        # Use a more stable optimizer configuration
+        optimizer = keras.optimizers.Adam(
+            learning_rate=0.001,
+            beta_1=0.9,
+            beta_2=0.999,
+            epsilon=1e-07,
+            clipnorm=1.0
+        )
+        
+        self.model.compile(
+            optimizer=optimizer,
+            loss="binary_crossentropy",
+            metrics=["accuracy"]
+        )
         logger.info("Model compiled successfully")
 
     def prepare_sequences(self, games, results):
@@ -154,20 +195,59 @@ class ChessRNN:
 
     def train(self, games, results, validation_split=0.2, epochs=10, batch_size=32):
         """
-        Train the model on the game sequences
+        Train the model with improved training process
         """
         logger.info("Starting model training...")
-        # Prepare sequences
         X, y = self.prepare_sequences(games, results)
 
-        # Build model if not already built
         if self.model is None:
             input_shape = (self.sequence_length, X.shape[2])
             self.build_model(input_shape)
 
-        # Train the model
-        logger.info(f"Training model with {len(X)} samples over {epochs} epochs")
-        history = self.model.fit(X, y, validation_split=validation_split, epochs=epochs, batch_size=batch_size)
+        # More sophisticated callbacks
+        callbacks = [
+            # Early stopping with longer patience
+            keras.callbacks.EarlyStopping(
+                monitor="val_loss",
+                patience=15,
+                restore_best_weights=True,
+                min_delta=0.001
+            ),
+            # Reduce learning rate when plateau
+            keras.callbacks.ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=5,
+                min_lr=0.00001,
+                verbose=1
+            ),
+            # Model checkpoint with .keras extension
+            keras.callbacks.ModelCheckpoint(
+                'best_model.keras',  # Changed from .h5 to .keras
+                monitor='val_accuracy',
+                save_best_only=True,
+                verbose=1
+            )
+        ]
+
+        # Class weights to handle imbalanced data
+        class_counts = np.bincount(y.astype(int))
+        total = len(y)
+        class_weights = {
+            0: total / (2 * class_counts[0]),
+            1: total / (2 * class_counts[1])
+        }
+
+        logger.info(f"Training model with {len(X)} samples")
+        history = self.model.fit(
+            X, y,
+            validation_split=validation_split,
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+            class_weight=class_weights,
+            shuffle=True
+        )
 
         logger.info("Model training completed")
         return history
@@ -201,3 +281,78 @@ def train_rnn(data, steps_per_game):
     history = rnn.train(games, results, epochs=200)
     logger.info("RNN training completed")
     return rnn
+
+
+def evaluate_model(model, data, title="Model Evaluation"):
+    """
+    Comprehensive evaluation of the model including metrics and visualizations
+    """
+    logger.info("Starting model evaluation...")
+
+    # Preprocess test data and get valid indices
+    games, true_labels = preprocess_data(data)
+    X, y = model.prepare_sequences(games, true_labels)  # This will filter short games
+    
+    # Get predictions for valid sequences only
+    predictions_prob = model.predict(X)
+    predictions = (predictions_prob > 0.5).astype(int)
+    
+    # Now true_labels and predictions will have matching lengths
+    conf_matrix = confusion_matrix(y, predictions)
+    class_report = classification_report(y, predictions)
+
+    # Calculate ROC curve
+    fpr, tpr, _ = roc_curve(y, predictions_prob)
+    roc_auc = auc(fpr, tpr)
+
+    # Create visualization
+    plt.figure(figsize=(15, 5))
+
+    # Plot 1: Confusion Matrix
+    plt.subplot(131)
+    sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues")
+    plt.title(f"{title}\nConfusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+
+    # Plot 2: ROC Curve
+    plt.subplot(132)
+    plt.plot(fpr, tpr, color="darkorange", lw=2, label=f"ROC curve (AUC = {roc_auc:.2f})")
+    plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve")
+    plt.legend(loc="lower right")
+
+    # Plot 3: Prediction Distribution
+    plt.subplot(133)
+    sns.histplot(predictions_prob, bins=50)
+    plt.title("Prediction Distribution")
+    plt.xlabel("Predicted Probability")
+    plt.ylabel("Count")
+
+    plt.tight_layout()
+
+    # Print classification report and metrics
+    logger.info("\nClassification Report:\n" + class_report)
+    logger.info(f"ROC AUC Score: {roc_auc:.3f}")
+    
+    # Calculate additional metrics
+    accuracy = (predictions == y).mean()
+    logger.info(f"Accuracy: {accuracy:.3f}")
+    
+    # Log number of samples used
+    logger.info(f"Evaluated on {len(y)} samples (filtered from {len(true_labels)} total games)")
+
+    return {
+        "confusion_matrix": conf_matrix,
+        "classification_report": class_report,
+        "roc_auc": roc_auc,
+        "accuracy": accuracy,
+        "predictions": predictions,
+        "probabilities": predictions_prob,
+        "n_samples": len(y),
+        "n_total_games": len(true_labels)
+    }

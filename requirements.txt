@@ -12,3 +12,4 @@ zstandard
 pyarrow
 wandb
 keras
+seaborn
