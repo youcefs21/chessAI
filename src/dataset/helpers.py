@@ -1,5 +1,6 @@
-from typing import Optional
+from typing import Optional, Tuple
 
+import numpy as np
 from chess.pgn import Game
 from chess import pgn
 
@@ -39,9 +40,10 @@ def board_fen_to_image(board_fen: str):
 
     There are 12 planes: Each plane corresponds to one type of piece (e.g., white pawn, black rook).
     """
+
     pieces = board_fen.split(" ")[0]
     rows = pieces.split("/")
-    board = [[[0 for _ in range(8)] for _ in range(8)] for _ in range(12)]
+    board = np.zeros((12, 8, 8), dtype=np.int8)
 
     # Populate piece planes
     for i, row in enumerate(rows):
@@ -52,7 +54,7 @@ def board_fen_to_image(board_fen: str):
                 continue
 
             piece_index = PIECE_CHANNELS[char]
-            board[piece_index - 1][i][j] = 1
+            board[piece_index - 1, i, j] = 1
             j += 1
 
     return board
@@ -60,7 +62,7 @@ def board_fen_to_image(board_fen: str):
 
 def move_to_tuple(
     move: pgn.ChildNode,
-) -> tuple[float, float | None, str | None, list[list[list[int]]]]:
+) -> tuple[float, float | None, str | None, str]:
     """
     Converts move data to a tuple of the following:
     - SAN (Standard Algebraic Notation) of the move
@@ -100,7 +102,7 @@ def move_to_tuple(
             # Convert string formatted time to seconds
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
 
-    return clk_c / 60, eval_c, eval_c_s, board_fen_to_image(move.board().fen())
+    return clk_c / 60, eval_c, eval_c_s, move.board().fen()
 
 
 def preprocess_game(game: Game):
@@ -115,6 +117,8 @@ def preprocess_game(game: Game):
     first_move_player = 0
     for move in game.mainline():
         time, eval_c, raw_eval, board_state = move_to_tuple(move)
+        if eval_c is None:
+            break
 
         # Append each value to its respective list in the dict
         game_data["Player"].append(first_move_player)
