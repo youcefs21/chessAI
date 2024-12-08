@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import pickle
-from train import ChessDataset, ChessNN, collate_fn, pgn_file_to_dataframe, accuracy, predict, get_data_loaders
+from training import ChessDataset, ChessNN, collate_fn, pgn_file_to_dataframe, accuracy, predict, get_data_loaders
 from torch.utils.data import DataLoader
 import sklearn.metrics
 import matplotlib.pyplot as plt
@@ -274,7 +274,7 @@ if __name__ == "__main__":
         game_dataset = ChessDataset(game_data, 10)
 
         # create data loaders
-        train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_data, batch_size=128)
+        train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_dataset, batch_size=128)
 
         # plot metrics for different move limits
         move_limits = [2, 4, 6, 8, 10, 14, 20, 24, 30]
@@ -302,5 +302,7 @@ if __name__ == "__main__":
     except FileNotFoundError as e:
         print(f"Error: {e}")
         print("Please ensure the model file and test data file exist at the specified paths.")
+        raise e
     except Exception as e:
         print(f"An error occurred: {e}")
+        raise e

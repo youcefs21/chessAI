@@ -7,7 +7,7 @@ import numpy as np
 from chess import pgn
 from sklearn.preprocessing import StandardScaler
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
-import pickle
+import multiprocessing as mp
 
 # use a gpu if available, to speed things up
 if torch.cuda.is_available():
@@ -159,10 +159,15 @@ def pgn_file_to_dataframe(input_pgn_file_path: str, limit: int = 10000) -> pd.Da
     game_iter = iterate_games(input_pgn_file_path, limit)
 
     games = []
-    for i, game in enumerate(game_iter):
-        games.append(pgn_game_to_data(game))
-        if (i + 1) % 1000 == 0:
-            print(f"processed {i + 1} games")
+    print("Loading data from file. This may take a while...")
+    with mp.Pool(mp.cpu_count()) as pool:
+        games = pool.map(pgn_game_to_data, game_iter)
+    print("Data loaded.")
+
+    # for i, game in enumerate(game_iter):
+    #     games.append(pgn_game_to_data(game))
+    #     if (i + 1) % 1000 == 0:
+    #         print(f"processed {i + 1} games")
 
     game_data = pd.DataFrame(games, columns=HEADERS_TO_KEEP + ["Moves"])
     return game_data
@@ -492,9 +497,7 @@ def collate_fn(batch):
     return data_padded, moves_padded, board_states_padded, labels_stacked, lengths
 
 
-def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader, Subset]:
-    # actually format the data
-    game_dataset = ChessDataset(game_data, 10)
+def get_data_loaders(game_dataset: ChessDataset, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader, Subset]:
 
     # split data into train/validation/test sets
     test_size = int(0.2 * len(game_dataset))  # 20% of total
@@ -525,7 +528,7 @@ if __name__ == "__main__":
     game_dataset = ChessDataset(game_data, 10)
 
     # split data into train/validation/test sets
-    train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_data, batch_size=128)
+    train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_dataset, batch_size=128)
 
     # initialize model
     model = ChessNN()
