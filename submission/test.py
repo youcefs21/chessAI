@@ -274,7 +274,7 @@ if __name__ == "__main__":
         game_dataset = ChessDataset(game_data, 10)
         
         # create data loaders
-        train_loader, validation_loader, test_loader = get_data_loaders(game_data, batch_size=128)
+        train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_data, batch_size=128)
         
         # plot metrics for different move limits
         move_limits = [2, 4, 6, 8, 10, 14, 20, 24, 30]

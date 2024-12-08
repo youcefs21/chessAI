@@ -506,7 +506,7 @@ def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoad
     validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=collate_fn)
     test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=collate_fn)
 
-    return train_loader, validation_loader, test_loader
+    return train_loader, validation_loader, test_loader, train_set_split
 
 if __name__ == "__main__":
     # set random seeds for reproducibility
@@ -520,7 +520,7 @@ if __name__ == "__main__":
     game_dataset = ChessDataset(game_data, 10)
 
     # split data into train/validation/test sets
-    train_loader, validation_loader, test_loader = get_data_loaders(game_data, batch_size=128)
+    train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_data, batch_size=128)
 
     # initialize model
     model = ChessNN()
