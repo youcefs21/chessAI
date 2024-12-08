@@ -4,3 +4,4 @@
 Data/lichess_db_standard_rated_2015-05.pgn
 OriginalData/
 /__pycache__/
+/submission/__pycache__/
