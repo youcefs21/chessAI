@@ -1,6 +1,6 @@
 from typing import Iterable
 import pandas as pd
-from torch.utils.data import DataLoader, random_split, Dataset
+from torch.utils.data import DataLoader, random_split, Dataset, Subset
 import torch.nn as nn
 import torch
 import numpy as np
@@ -493,15 +493,20 @@ def collate_fn(batch):
     return data_padded, moves_padded, board_states_padded, labels_stacked, lengths
 
 
-def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
+def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader, Subset]:
+    # actually format the data
     game_dataset = ChessDataset(game_data, 10)
-    test_size = int(0.2 * len(game_dataset))
+
+    # split data into train/validation/test sets
+    test_size = int(0.2 * len(game_dataset))  # 20% of total
     train_size = len(game_dataset) - test_size
     train_data, test_data = random_split(game_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
-    validation_size = int(0.2 * train_size)
+
+    validation_size = int(0.2 * train_size)  # 20% of leftover training (16% of total)
     train_size_split = train_size - validation_size
     train_set_split, validation_set_split = random_split(train_data, [train_size_split, validation_size], generator=torch.Generator().manual_seed(42))
 
+    # Organize into loaders for the model
     train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=collate_fn)
     validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=collate_fn)
     test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=collate_fn)
