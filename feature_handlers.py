@@ -68,7 +68,7 @@ def filter_headers(game: pgn.Game) -> dict[str, str | int]:
     return game_headers
 
 
-def move_to_tuple(move: pgn.ChildNode) -> tuple[str, str, float | None, int | None, str]:
+def move_to_tuple(move: pgn.ChildNode) -> tuple[float | None, int | None, str]:
     """
     Converts move data to a tuple of the following:
     - SAN (Standard Algebraic Notation) of the move
