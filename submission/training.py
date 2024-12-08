@@ -160,15 +160,11 @@ def pgn_file_to_dataframe(input_pgn_file_path: str, limit: int = 10000) -> pd.Da
 
     games = []
     print("Loading data from file. This may take a while...")
-    with mp.Pool(mp.cpu_count()) as pool:
-        games = pool.map(pgn_game_to_data, game_iter)
+    for i, game in enumerate(game_iter):
+        games.append(pgn_game_to_data(game))
+        if (i + 1) % 1000 == 0:
+            print(f"processed {i + 1} games")
     print("Data loaded.")
-
-    # Same as above but sequentially, kept for reference
-    # for i, game in enumerate(game_iter):
-    #     games.append(pgn_game_to_data(game))
-    #     if (i + 1) % 1000 == 0:
-    #         print(f"processed {i + 1} games")
 
     game_data = pd.DataFrame(games, columns=HEADERS_TO_KEEP + ["Moves"])
     return game_data
