@@ -37,19 +37,20 @@ MOVE_HEADER_NAMES = [
 
 # mapping of piece types to channel indices for board representation
 PIECE_CHANNELS = {
-    "P": 1, # white pawn
-    "N": 2, # white knight 
-    "B": 3, # white bishop
-    "R": 4, # white rook
-    "Q": 5, # white queen
-    "K": 6, # white king
-    "p": 7, # black pawn
-    "n": 8, # black knight
-    "b": 9, # black bishop
-    "r": 10, # black rook
-    "q": 11, # black queen
-    "k": 12, # black king
+    "P": 1,  # white pawn
+    "N": 2,  # white knight
+    "B": 3,  # white bishop
+    "R": 4,  # white rook
+    "Q": 5,  # white queen
+    "K": 6,  # white king
+    "p": 7,  # black pawn
+    "n": 8,  # black knight
+    "b": 9,  # black bishop
+    "r": 10,  # black rook
+    "q": 11,  # black queen
+    "k": 12,  # black king
 }
+
 
 def move_to_tuple(move: pgn.ChildNode) -> tuple[float | None, int | None, str]:
     """extracts evaluation score, remaining time, and board state from a move"""
@@ -62,6 +63,7 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[float | None, int | None, str]:
     eval_c: float | None = None
     clk_c: int | None = None
     for c in split_comment:
+        # engine evaluation of the move
         if "eval" in c:
             eval_c_s = c.replace("]", "").replace("[", "").split(" ")[1]
             if "#" not in eval_c_s:
@@ -76,6 +78,7 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[float | None, int | None, str]:
                 eval_c = -eval_c
             continue
 
+        # remaining time on the clock
         if "clk" in c:
             clk_c_s = c.replace("]", "").replace("[", "").split(" ")[1]
             clk_c = sum([a * b for a, b in zip(ftr, map(int, clk_c_s.split(":")))])
@@ -86,12 +89,12 @@ def move_to_tuple(move: pgn.ChildNode) -> tuple[float | None, int | None, str]:
 # convert data to more usable features (do this on the fly)
 def filter_headers(game: pgn.Game) -> dict[str, str | int]:
     """filters game headers and converts values to appropriate types
-    
+
     input values:
     - result: win/loss/draw (1-0, 0-1, 1/2-1/2)
     - whiteElo: player rating
     - blackElo: player rating
-    
+
     output values:
     - result: 2=white win, 1=draw, 0=black win
     - whiteElo: int
@@ -111,6 +114,7 @@ def filter_headers(game: pgn.Game) -> dict[str, str | int]:
 
     return game_headers
 
+
 def pgn_game_to_data(game: pgn.Game) -> list:
     """converts a chess game into a structured data format"""
     game_headers = filter_headers(game)
@@ -124,7 +128,7 @@ def pgn_game_to_data(game: pgn.Game) -> list:
         )
     )
 
-    # extract move data
+    # extract move data from pgn format and convert to array-like dataframe
     moves = []
     first_move_player = 0
     for move in game.mainline():
@@ -134,6 +138,7 @@ def pgn_game_to_data(game: pgn.Game) -> list:
     pd_moves = pd.DataFrame(moves, columns=MOVE_HEADER_NAMES)
 
     return [*game_headers_values, pd_moves]
+
 
 def iterate_games(input_pgn_file_path: str, limit: int | None = None) -> Iterable[pgn.Game]:
     """yields games from a pgn file, up to optional limit"""
@@ -148,6 +153,7 @@ def iterate_games(input_pgn_file_path: str, limit: int | None = None) -> Iterabl
             game = pgn.read_game(in_pgn)
             count += 1
 
+
 def pgn_file_to_dataframe(input_pgn_file_path: str, limit: int = 10000) -> pd.DataFrame:
     """converts pgn file contents to pandas dataframe"""
     game_iter = iterate_games(input_pgn_file_path, limit)
@@ -161,9 +167,10 @@ def pgn_file_to_dataframe(input_pgn_file_path: str, limit: int = 10000) -> pd.Da
     game_data = pd.DataFrame(games, columns=HEADERS_TO_KEEP + ["Moves"])
     return game_data
 
+
 def board_fen_to_image(board_fen: str):
     """converts chess board fen string to 12-channel tensor representation
-    
+
     each channel represents positions of one piece type (e.g. white pawns)
     output shape: (12, 8, 8) where 12 = number of piece types"""
     pieces = board_fen.split(" ")[0]
@@ -184,12 +191,14 @@ def board_fen_to_image(board_fen: str):
 
     return board
 
+
 class ChessDataset(Dataset):
     def __init__(self, game_data: pd.DataFrame, only_use_first_X_moves: int | None = None):
         """dataset for chess games with normalized features"""
         game_data = game_data.dropna()
         self.labels = torch.tensor(game_data["Result"].to_numpy(), dtype=torch.float32)
 
+        # each game has a list of moves -> this function needs to run on each list of moves
         def normalize_moves(moves_df):
             # normalize evaluation scores
             moves_df = moves_df.fillna(0)
@@ -223,16 +232,18 @@ class ChessDataset(Dataset):
         board_state_tensor = torch.tensor(np.array(self.board_states[idx]), dtype=torch.float32)
         moves = self.moves[idx]
 
+        # restrict to first X moves if needed
         if self.move_limit is not None:
             moves = moves[: self.move_limit]
             board_state_tensor = board_state_tensor[: self.move_limit]
 
         return self.game_metadata[idx], moves, board_state_tensor, self.labels[idx]
 
+
 class ChessNN(nn.Module):
     def __init__(self):
         """neural network for chess game outcome prediction
-        
+
         architecture:
         1. cnn processes board states
         2. lstm processes move sequences
@@ -263,28 +274,13 @@ class ChessNN(nn.Module):
         self.flatten_cnn_output = nn.Linear(128 * 2 * 2, 256)
 
         # process move sequences
-        self.rnn = nn.LSTM(
-            input_size=256 + metadata_per_move,
-            hidden_size=256,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.3
-        )
+        self.rnn = nn.LSTM(input_size=256 + metadata_per_move, hidden_size=256, num_layers=2, batch_first=True, bidirectional=True, dropout=0.3)
 
         # classification layers
-        self.fc = nn.Sequential(
-            nn.Linear(256 * 2, 256),
-            nn.ReLU(),
-            nn.Dropout(0.4)
-        )
+        self.fc = nn.Sequential(nn.Linear(256 * 2, 256), nn.ReLU(), nn.Dropout(0.4))
 
         # combine with game metadata
-        self.fc2 = nn.Sequential(
-            nn.Linear(256 + metadata_per_game, 128),
-            nn.ReLU(),
-            nn.Dropout(0.4)
-        )
+        self.fc2 = nn.Sequential(nn.Linear(256 + metadata_per_game, 128), nn.ReLU(), nn.Dropout(0.4))
 
         # final prediction layer
         self.fc3 = nn.Linear(128, 3)
@@ -302,12 +298,7 @@ class ChessNN(nn.Module):
         combined_features = torch.cat((cnn_out, moves), dim=2)
 
         # process move sequences
-        packed_features = pack_padded_sequence(
-            combined_features,
-            lengths.to("cpu"),
-            batch_first=True,
-            enforce_sorted=False
-        )
+        packed_features = pack_padded_sequence(combined_features, lengths.to("cpu"), batch_first=True, enforce_sorted=False)
         packed_rnn_out, _ = self.rnn(packed_features)
         rnn_out, _ = pad_packed_sequence(packed_rnn_out, batch_first=True)
 
@@ -323,6 +314,7 @@ class ChessNN(nn.Module):
 
         return output
 
+
 def test_loss(model: nn.Module, test_loader: DataLoader, loss_function: nn.modules.loss._Loss) -> float:
     """calculate average loss on test data"""
     model.eval()
@@ -337,12 +329,14 @@ def test_loss(model: nn.Module, test_loader: DataLoader, loss_function: nn.modul
             lengths = lengths.to(device).float()
             target = target.to(device).long()
 
+            # set model to eval mode and calculate loss
             model.eval()
             output = model(data, moves, board_states, lengths)
             loss = loss_function(output, target.long())
             test_loss += loss.item()
 
     return test_loss / len(test_loader)
+
 
 def predict(model: nn.Module, test_loader: DataLoader) -> list[int]:
     """generate predictions for test data"""
@@ -357,6 +351,7 @@ def predict(model: nn.Module, test_loader: DataLoader) -> list[int]:
             board_states = board_states.to(device).float()
             lengths = lengths.to(device).float()
 
+            # set model to eval mode and make prediction
             model.eval()
             output = model(data, moves, board_states, lengths)
             _, predicted = torch.max(output.data, 1)
@@ -364,9 +359,11 @@ def predict(model: nn.Module, test_loader: DataLoader) -> list[int]:
 
     return predictions
 
+
 def flatten(xss):
     """flatten nested list"""
     return [x for xs in xss for x in xs]
+
 
 def train(
     model: nn.Module,
@@ -385,7 +382,7 @@ def train(
 
     # setup optimizer with weight decay for regularization
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-    
+
     # reduce learning rate when validation loss plateaus
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -412,7 +409,7 @@ def train(
             output = model(data, moves, board_states, lengths)
             loss = loss_function(output, target.long())
             loss.backward()
-            
+
             # clip gradients to prevent explosion
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -423,9 +420,10 @@ def train(
         avg_train_loss = current_epoch_train_loss / len(train_loader)
         avg_test_loss = test_loss(model, test_loader, loss_function=loss_function)
 
+        # save metrics for graphing
         train_losses.append(avg_train_loss)
         test_losses.append(avg_test_loss)
-        
+
         train_accuracy.append(
             accuracy(
                 predict(model, train_loader),
@@ -439,6 +437,7 @@ def train(
             )
         )
 
+        # reduce learning rate if needed
         scheduler.step(avg_test_loss)
 
         if e % print_every == 0:
@@ -448,7 +447,6 @@ def train(
             print(f"train accuracy: {train_accuracy[-1]}")
             print(f"test accuracy: {test_accuracy[-1]}")
 
-    
     # save the model to a pickle file
     model_save_path = "model.pkl"
     with open(model_save_path, "wb") as f:
@@ -457,6 +455,7 @@ def train(
 
     return train_losses, test_losses, train_accuracy, test_accuracy
 
+
 def accuracy(Y_pred, Y_test) -> float:
     """calculate prediction accuracy"""
     Y_pred = np.array(Y_pred)
@@ -464,6 +463,7 @@ def accuracy(Y_pred, Y_test) -> float:
     correct = np.sum(Y_pred == Y_test)
     total = len(Y_test)
     return correct / total if total > 0 else 0
+
 
 def collate_fn(batch):
     """prepare batch data for training"""
@@ -493,7 +493,7 @@ def collate_fn(batch):
     return data_padded, moves_padded, board_states_padded, labels_stacked, lengths
 
 
-def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader]:
+def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     game_dataset = ChessDataset(game_data, 10)
     test_size = int(0.2 * len(game_dataset))
     train_size = len(game_dataset) - test_size
@@ -507,6 +507,7 @@ def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoad
     test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=collate_fn)
 
     return train_loader, validation_loader, test_loader, train_set_split
+
 
 if __name__ == "__main__":
     # set random seeds for reproducibility
@@ -543,5 +544,5 @@ if __name__ == "__main__":
         test_loader=validation_loader,
         print_every=10,
         learning_rate=0.01,
-        epoch=2,
+        epoch=200,
     )
