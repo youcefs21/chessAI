@@ -268,6 +268,7 @@ if __name__ == "__main__":
         # load model and create initial test loader
         model = load_model(MODEL_PATH)
         model.to(device)
+        model.eval()
 
         # load data
         game_data = pgn_file_to_dataframe(TEST_DATA_PATH)
@@ -277,6 +278,7 @@ if __name__ == "__main__":
         train_loader, validation_loader, test_loader, train_set_split = get_data_loaders(game_dataset, batch_size=128)
 
         # plot metrics for different move limits
+        print("Running tests and gathering metrics...")
         move_limits = [2, 4, 6, 8, 10, 14, 20, 24, 30]
         plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_dataset)
 
