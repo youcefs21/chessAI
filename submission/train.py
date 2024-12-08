@@ -7,6 +7,7 @@ import numpy as np
 from chess import pgn
 from sklearn.preprocessing import StandardScaler
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
+import pickle
 
 # use a gpu if available, to speed things up
 if torch.cuda.is_available():
@@ -447,6 +448,13 @@ def train(
             print(f"train accuracy: {train_accuracy[-1]}")
             print(f"test accuracy: {test_accuracy[-1]}")
 
+    
+    # save the model to a pickle file
+    model_save_path = "model.pkl"
+    with open(model_save_path, "wb") as f:
+        pickle.dump(model, f)
+    print(f"Model saved to {model_save_path}")
+
     return train_losses, test_losses, train_accuracy, test_accuracy
 
 def accuracy(Y_pred, Y_test) -> float:
@@ -484,50 +492,56 @@ def collate_fn(batch):
 
     return data_padded, moves_padded, board_states_padded, labels_stacked, lengths
 
-# set random seeds for reproducibility
-torch.manual_seed(42)
-np.random.seed(42)
-print("torch cuda available:", torch.cuda.is_available())
 
-# load and preprocess data
-data_path = f"Data/2024-08/xaa.pgn"
-game_data = pgn_file_to_dataframe(data_path)
-game_dataset = ChessDataset(game_data, 10)
+def get_data_loaders(game_data: pd.DataFrame, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader]:
+    game_dataset = ChessDataset(game_data, 10)
+    test_size = int(0.2 * len(game_dataset))
+    train_size = len(game_dataset) - test_size
+    train_data, test_data = random_split(game_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
+    validation_size = int(0.2 * train_size)
+    train_size_split = train_size - validation_size
+    train_set_split, validation_set_split = random_split(train_data, [train_size_split, validation_size], generator=torch.Generator().manual_seed(42))
 
-# split data into train/validation/test sets
-test_size = int(0.2 * len(game_dataset))
-train_size = len(game_dataset) - test_size
-train_data, test_data = random_split(game_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
-validation_size = int(0.2 * train_size)
-train_size_split = train_size - validation_size
-train_set_split, validation_set_split = random_split(train_data, [train_size_split, validation_size], generator=torch.Generator().manual_seed(42))
+    train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=collate_fn)
+    validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=collate_fn)
+    test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=collate_fn)
 
-# create data loaders
-batch_size = 128
-train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=collate_fn)
-validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=collate_fn)
-test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=collate_fn)
+    return train_loader, validation_loader, test_loader
 
-# initialize model
-model = ChessNN()
-model.to(device)
+if __name__ == "__main__":
+    # set random seeds for reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+    print("torch cuda available:", torch.cuda.is_available())
 
-# calculate class weights for balanced training
-class_counts = torch.bincount(torch.tensor([int(label) for label in game_dataset.labels[train_set_split.indices]]))
-class_weights = 1.0 / class_counts
-class_weights = class_weights / class_weights.sum()
-class_weights = class_weights.to(device)
+    # load and preprocess data
+    data_path = f"Data/2024-08/xaa.pgn"
+    game_data = pgn_file_to_dataframe(data_path)
+    game_dataset = ChessDataset(game_data, 10)
 
-# initialize loss function with class weights
-loss_function = nn.CrossEntropyLoss(weight=class_weights)
+    # split data into train/validation/test sets
+    train_loader, validation_loader, test_loader = get_data_loaders(game_data, batch_size=128)
 
-# train model
-train_losses, validation_losses, train_accuracy, validation_accuracy = train(
-    model,
-    loss_function=loss_function,
-    train_loader=train_loader,
-    test_loader=validation_loader,
-    print_every=10,
-    learning_rate=0.01,
-    epoch=200,
-)
+    # initialize model
+    model = ChessNN()
+    model.to(device)
+
+    # calculate class weights for balanced training
+    class_counts = torch.bincount(torch.tensor([int(label) for label in game_dataset.labels[train_set_split.indices]]))
+    class_weights = 1.0 / class_counts
+    class_weights = class_weights / class_weights.sum()
+    class_weights = class_weights.to(device)
+
+    # initialize loss function with class weights
+    loss_function = nn.CrossEntropyLoss(weight=class_weights)
+
+    # train model
+    train_losses, validation_losses, train_accuracy, validation_accuracy = train(
+        model,
+        loss_function=loss_function,
+        train_loader=train_loader,
+        test_loader=validation_loader,
+        print_every=10,
+        learning_rate=0.01,
+        epoch=2,
+    )
