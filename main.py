@@ -6,6 +6,7 @@ import numpy as np
 
 import feature_handlers as fh
 import model_lib as ml
+import performance_metrics as pm
 
 
 def main(parent_dir: str, src_file: str) -> None:
@@ -58,7 +59,7 @@ def main(parent_dir: str, src_file: str) -> None:
     model.to(ml.device)
 
     # Initialize the data loaders, using a batch size of 128
-    batch_size = 32
+    batch_size = 128
     train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=ml.collate_fn)
     validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=ml.collate_fn)
     test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=ml.collate_fn)
@@ -87,21 +88,29 @@ def main(parent_dir: str, src_file: str) -> None:
     ml.plot_eval_results(train_accuracy, validation_accuracy)
     # Kind of a hack, but limit all datasets (including the test set) to 20 moves
     # can be changed multiple times and will change the resulting test loader
-    print("MOVE LIMIT 1")
-    game_dataset.move_limit = 1
-    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
-    print("MOVE LIMIT 5")
-    game_dataset.move_limit = 5
-    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
-    print("MOVE LIMIT 10")
-    game_dataset.move_limit = 10
-    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
-    print("20 MOVE LIMIT")
-    game_dataset.move_limit = 20
-    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
-    print("NO MOVE LIMIT")
-    game_dataset.move_limit = None
-    ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+
+    for move_limit in [2, 4, 6, 8, 10, 14, 20, 24, 30, 50, 60, None]:
+        game_dataset.move_limit = move_limit
+        print(f"Train set - MOVE LIMIT {move_limit}")
+        ml.printPerformaceMetrics(model=model, test_loader=train_loader)
+        print(f"Test set - MOVE LIMIT {move_limit}")
+        ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+
+    # print("MOVE LIMIT 1")
+    # game_dataset.move_limit = 1
+    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    # print("MOVE LIMIT 5")
+    # game_dataset.move_limit = 5
+    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    # print("MOVE LIMIT 10")
+    # game_dataset.move_limit = 10
+    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    # print("20 MOVE LIMIT")
+    # game_dataset.move_limit = 20
+    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
+    # print("NO MOVE LIMIT")
+    # game_dataset.move_limit = None
+    # ml.printPerformaceMetrics(model=model, test_loader=test_loader)
     # TODO get accuracy on all move limits from 1 to 100
 
 

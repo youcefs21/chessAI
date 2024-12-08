@@ -249,7 +249,7 @@ def train(
     epoch: int,
     learning_rate: float = 0.0003,  # Reduced initial learning rate
     print_every: int = 100,
-) -> tuple[list[float], list[float]]:
+) -> tuple[list[float], list[float], list[float], list[float]]:
     train_losses: list[float] = []
     test_losses = []
     train_accuracy = []

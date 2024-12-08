@@ -1,5 +1,6 @@
 import sklearn.metrics
 import numpy as np
+import pandas as pd
 
 
 # Confusion matrix
@@ -62,13 +63,24 @@ def print_metrics(Y_pred, Y_test, labels=[0, 1, 2]):
     # Print Accuracy
     print(f"Accuracy: {accuracy(Y_pred, Y_test):.4f}")
 
+    metrics = pd.DataFrame(columns=["Win", "Draw", "Loss"], index=["TP", "FP", "FN", "TN", "TPR", "FPR"])
+
     # Print metrics for each class
-    for label in labels:
-        print(f"Class {label}:")
-        print(f"  TP: {tp(Y_pred, Y_test, label)}")
-        print(f"  FP: {fp(Y_pred, Y_test, label)}")
-        print(f"  FN: {fn(Y_pred, Y_test, label)}")
-        print(f"  TN: {tn(Y_pred, Y_test, label)}")
-        print(f"  TPR (Recall): {tpr(Y_pred, Y_test, label)}")
-        print(f"  FPR: {fpr(Y_pred, Y_test, label)}")
-        print()
+    for label, friendly_name in zip(labels, ["Win", "Draw", "Loss"]):
+        metrics[friendly_name] = [
+            tp(Y_pred, Y_test, label),
+            fp(Y_pred, Y_test, label),
+            fn(Y_pred, Y_test, label),
+            tn(Y_pred, Y_test, label),
+            tpr(Y_pred, Y_test, label),
+            fpr(Y_pred, Y_test, label),
+        ]
+        # print(f"Class {label}:")
+        # print(f"  TP: {tp(Y_pred, Y_test, label)}")
+        # print(f"  FP: {fp(Y_pred, Y_test, label)}")
+        # print(f"  FN: {fn(Y_pred, Y_test, label)}")
+        # print(f"  TN: {tn(Y_pred, Y_test, label)}")
+        # print(f"  TPR (Recall): {tpr(Y_pred, Y_test, label)}")
+        # print(f"  FPR: {fpr(Y_pred, Y_test, label)}")
+        # print()
+    print(metrics)
