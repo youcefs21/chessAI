@@ -156,7 +156,7 @@ def printPerformaceMetrics(model, test_loader):
     print_metrics(y_pred, y_test)
 
 
-def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits):
+def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_dataset):
     """Plot accuracy, precision and recall vs number of moves used"""
     train_metrics = {"accuracy": [], "precision": [], "recall": []}
     test_metrics = {"accuracy": [], "precision": [], "recall": []}
@@ -255,18 +255,19 @@ def plot_confusion_matrix(y_true, y_pred, title="Confusion Matrix"):
 def load_model(path: str) -> ChessNN:
     """Load a saved model"""
     model = ChessNN()
-    model.load_state_dict(torch.load(path))
+    model.load_state_dict(torch.load(path, weights_only=True))
     model.eval()  # Set to evaluation mode
     return model
 
 
 if __name__ == "__main__":
-    MODEL_PATH = "model.pt"
+    MODEL_PATH = "submission/model.pt"
     TEST_DATA_PATH = "Data/2024-08/xaa.pgn"
 
     try:
         # load model and create initial test loader
         model = load_model(MODEL_PATH)
+        model.to(device)
 
         # load data
         game_data = pgn_file_to_dataframe(TEST_DATA_PATH)
@@ -277,7 +278,7 @@ if __name__ == "__main__":
 
         # plot metrics for different move limits
         move_limits = [2, 4, 6, 8, 10, 14, 20, 24, 30]
-        plot_metrics_vs_moves(model, train_loader, test_loader, move_limits)
+        plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_dataset)
 
         # generate confusion matrices for a few key move limits
         for moves in [10, 20, 30]:
