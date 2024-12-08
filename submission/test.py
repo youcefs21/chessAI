@@ -39,15 +39,6 @@ def tn(Y_pred, Y_test, label) -> int:
     return total - class_total  # True Negatives for the given class
 
 
-# Overall Accuracy
-def accuracy(Y_pred, Y_test) -> float:
-    Y_pred = np.array(Y_pred)
-    Y_test = np.array(Y_test)
-    correct = np.sum(Y_pred == Y_test)
-    total = len(Y_test)
-    return correct / total if total > 0 else 0
-
-
 # Overall Precision
 def overall_precision(Y_pred, Y_test, labels=[0, 1, 2]) -> float:
     total_tp = sum(tp(Y_pred, Y_test, label) for label in labels)
