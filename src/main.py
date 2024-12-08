@@ -11,7 +11,7 @@ from models.simple_rnn import train_rnn
 
 # consts
 batch_size = 32
-size = Sizes.smol
+size = Sizes.mid
 train_size = size.value * 0.8
 validation_size = int(0.2 * train_size)
 train_size_split = train_size - validation_size
