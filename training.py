@@ -456,12 +456,12 @@ def train(
     return train_losses, test_losses, train_accuracy, test_accuracy
 
 
-def accuracy(Y_pred, Y_test) -> float:
+def accuracy(y_pred, y_test) -> float:
     """calculate prediction accuracy"""
-    Y_pred = np.array(Y_pred)
-    Y_test = np.array(Y_test)
-    correct = np.sum(Y_pred == Y_test)
-    total = len(Y_test)
+    y_pred = np.array(y_pred)
+    y_test = np.array(y_test)
+    correct = np.sum(y_pred == y_test)
+    total = len(y_test)
     return correct / total if total > 0 else 0
 
 

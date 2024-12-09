@@ -16,135 +16,73 @@ elif torch.backends.mps.is_available():
 else:
     device = torch.device("cpu")
 
-
 # Confusion matrix
-def confusion_matrix(Y_pred, Y_test, labels=[0, 1, 2]):
-    return sklearn.metrics.confusion_matrix(Y_test, Y_pred, labels=labels)
+def confusion_matrix(y_prediction, y_test, labels=None):
+    if labels is None:
+        labels = [0, 1, 2]
+    return sklearn.metrics.confusion_matrix(y_test, y_prediction, labels=labels)
 
 
 # True Positive (per class)
-def tp(Y_pred, Y_test, label) -> int:
-    conf_mat = confusion_matrix(Y_pred, Y_test)
+def tp(y_prediction, y_test, label) -> int:
+    conf_mat = confusion_matrix(y_prediction, y_test)
     return conf_mat[label, label]  # True Positives for the given class
 
 
 # False Positive (per class)
-def fp(Y_pred, Y_test, label) -> int:
-    conf_mat = confusion_matrix(Y_pred, Y_test)
+def fp(y_prediction, y_test, label) -> int:
+    conf_mat = confusion_matrix(y_prediction, y_test)
     return np.sum(conf_mat[:, label]) - conf_mat[label, label]  # False Positives for the given class
 
 
 # False Negative (per class)
-def fn(Y_pred, Y_test, label) -> int:
-    conf_mat = confusion_matrix(Y_pred, Y_test)
+def fn(y_prediction, y_test, label) -> int:
+    conf_mat = confusion_matrix(y_prediction, y_test)
     return np.sum(conf_mat[label, :]) - conf_mat[label, label]  # False Negatives for the given class
 
 
 # True Negative (per class)
-def tn(Y_pred, Y_test, label) -> int:
-    conf_mat = confusion_matrix(Y_pred, Y_test)
+def tn(y_prediction, y_test, label) -> int:
+    conf_mat = confusion_matrix(y_prediction, y_test)
     total = np.sum(conf_mat)
     class_total = np.sum(conf_mat[label, :]) + np.sum(conf_mat[:, label]) - conf_mat[label, label]
     return total - class_total  # True Negatives for the given class
 
 
 # Overall Precision
-def overall_precision(Y_pred, Y_test, labels=[0, 1, 2]) -> float:
-    total_tp = sum(tp(Y_pred, Y_test, label) for label in labels)
-    total_fp = sum(fp(Y_pred, Y_test, label) for label in labels)
+def overall_precision(y_prediction, y_test, labels=[0, 1, 2]) -> float:
+    total_tp = sum(tp(y_prediction, y_test, label) for label in labels)
+    total_fp = sum(fp(y_prediction, y_test, label) for label in labels)
     return total_tp / max(1, total_tp + total_fp)
 
 
 # Overall Recall
-def overall_recall(Y_pred, Y_test, labels=[0, 1, 2]) -> float:
-    total_tp = sum(tp(Y_pred, Y_test, label) for label in labels)
-    total_fn = sum(fn(Y_pred, Y_test, label) for label in labels)
+def overall_recall(y_prediction, y_test, labels=[0, 1, 2]) -> float:
+    total_tp = sum(tp(y_prediction, y_test, label) for label in labels)
+    total_fn = sum(fn(y_prediction, y_test, label) for label in labels)
     return total_tp / max(1, total_tp + total_fn)
 
 
 # Print all metrics for each class and overall metrics
-def print_metrics(Y_pred, Y_test, labels=[0, 1, 2]):
+def print_metrics(y_prediction, y_test, labels=[0, 1, 2]):
     # Print overall metrics
-    print(f"Overall Accuracy: {accuracy(Y_pred, Y_test):.4f}")
-    print(f"Overall Precision: {overall_precision(Y_pred, Y_test, labels):.4f}")
-    print(f"Overall Recall: {overall_recall(Y_pred, Y_test, labels):.4f}\n")
+    print(f"Overall Accuracy: {accuracy(y_prediction, y_test):.4f}")
+    print(f"Overall Precision: {overall_precision(y_prediction, y_test, labels):.4f}")
+    print(f"Overall Recall: {overall_recall(y_prediction, y_test, labels):.4f}\n")
 
     # Class-wise metrics
     metrics = pd.DataFrame(columns=["Win", "Draw", "Loss"], index=["TP", "FP", "FN", "TN"])
 
     for label, friendly_name in zip(labels, ["Win", "Draw", "Loss"]):
         metrics[friendly_name] = [
-            tp(Y_pred, Y_test, label),
-            fp(Y_pred, Y_test, label),
-            fn(Y_pred, Y_test, label),
-            tn(Y_pred, Y_test, label),
+            tp(y_prediction, y_test, label),
+            fp(y_prediction, y_test, label),
+            fn(y_prediction, y_test, label),
+            tn(y_prediction, y_test, label),
         ]
 
     print("Metrics for each class:\n")
     print(metrics.round(4))
-
-
-# def test_model(model_path: str, test_data_path: str) -> float:
-#     """
-#     Load and test the saved model
-
-#     Args:
-#         model_path: Path to the saved pickle model file
-#         test_data_path: Path to test data PGN file
-
-#     Returns:
-#         float: Test accuracy
-#     """
-#     # Load the model
-#     with open(model_path, "rb") as f:
-#         model = pickle.load(f)
-#     model.to(device)
-#     model.eval()
-
-#     # Load and preprocess test data
-#     game_data = pgn_file_to_dataframe(test_data_path, 1000)
-#     test_dataset = ChessDataset(game_data, 10)
-
-#     # Create test dataloader
-#     test_loader = DataLoader(test_dataset, batch_size=128, collate_fn=collate_fn)
-
-#     # Test the model
-#     all_predictions = []
-#     all_labels = []
-
-#     with torch.no_grad():
-#         for data, moves, board_states, labels, lengths in test_loader:
-#             # Move data to device
-#             data = data.to(device).float()
-#             moves = moves.to(device).float()
-#             board_states = board_states.to(device).float()
-#             lengths = lengths.to(device).float()
-#             labels = labels.to(device)
-
-#             # Get predictions
-#             outputs = model(data, moves, board_states, lengths)
-#             _, predicted = torch.max(outputs.data, 1)
-
-#             # Store predictions and labels
-#             all_predictions.extend(predicted.cpu().numpy())
-#             all_labels.extend(labels.cpu().numpy())
-
-#     # Calculate accuracy
-#     test_accuracy = accuracy(all_predictions, all_labels)
-#     return test_accuracy
-
-
-# def printPerformaceMetrics(model, test_loader):
-#     y_pred = predict(model, test_loader)  # Get predicted labels
-#     y_test = []
-
-#     # Extract ground truth labels and flatten them
-#     for data, moves, board_states, target, lengths in test_loader:
-#         y_test.extend(target.tolist())  # Convert target tensor to a list of labels
-
-#     # Now you can use these for metrics
-#     print_metrics(y_pred, y_test)
-
 
 def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_dataset):
     """Plot accuracy, precision and recall vs number of moves used"""
@@ -158,14 +96,14 @@ def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_da
         # get predictions for train set
         y_pred_train = predict(model, train_loader)
         y_true_train = []
-        for _, _, _, target, _ in train_loader:
-            y_true_train.extend(target.tolist())
+        for _, _, _, x, _ in train_loader:
+            y_true_train.extend(x.tolist())
 
         # get predictions for test set
         y_pred_test = predict(model, test_loader)
         y_true_test = []
-        for _, _, _, target, _ in test_loader:
-            y_true_test.extend(target.tolist())
+        for _, _, _, x, _ in test_loader:
+            y_true_test.extend(x.tolist())
 
         # calculate metrics for train set
         train_metrics["accuracy"].append(accuracy(y_pred_train, y_true_train))
