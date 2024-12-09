@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import torch
@@ -49,26 +50,10 @@ def tn(y_prediction, y_test, label) -> int:
     return total - class_total  # True Negatives for the given class
 
 
-# Overall Precision
-def overall_precision(y_prediction, y_test, labels=[0, 1, 2]) -> float:
-    total_tp = sum(tp(y_prediction, y_test, label) for label in labels)
-    total_fp = sum(fp(y_prediction, y_test, label) for label in labels)
-    return total_tp / max(1, total_tp + total_fp)
-
-
-# Overall Recall
-def overall_recall(y_prediction, y_test, labels=[0, 1, 2]) -> float:
-    total_tp = sum(tp(y_prediction, y_test, label) for label in labels)
-    total_fn = sum(fn(y_prediction, y_test, label) for label in labels)
-    return total_tp / max(1, total_tp + total_fn)
-
-
 # Print all metrics for each class and overall metrics
 def print_metrics(y_prediction, y_test, labels=[0, 1, 2]):
     # Print overall metrics
     print(f"Overall Accuracy: {accuracy(y_prediction, y_test):.4f}")
-    print(f"Overall Precision: {overall_precision(y_prediction, y_test, labels):.4f}")
-    print(f"Overall Recall: {overall_recall(y_prediction, y_test, labels):.4f}\n")
 
     # Class-wise metrics
     metrics = pd.DataFrame(columns=["Win", "Draw", "Loss"], index=["TP", "FP", "FN", "TN"])
@@ -85,9 +70,9 @@ def print_metrics(y_prediction, y_test, labels=[0, 1, 2]):
     print(metrics.round(4))
 
 def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_dataset):
-    """Plot accuracy, precision and recall vs number of moves used"""
-    train_metrics = {"accuracy": [], "precision": [], "recall": []}
-    test_metrics = {"accuracy": [], "precision": [], "recall": []}
+    """Plot accuracy vs number of moves used"""
+    train_accuracies = []
+    test_accuracies = []
 
     for move_limit in move_limits:
         # update move limit for both loaders
@@ -105,48 +90,24 @@ def plot_metrics_vs_moves(model, train_loader, test_loader, move_limits, game_da
         for _, _, _, x, _ in test_loader:
             y_true_test.extend(x.tolist())
 
-        # calculate metrics for train set
-        train_metrics["accuracy"].append(accuracy(y_pred_train, y_true_train))
-        train_metrics["precision"].append(overall_precision(y_pred_train, y_true_train))
-        train_metrics["recall"].append(overall_recall(y_pred_train, y_true_train))
+        # calculate accuracies
+        train_accuracies.append(accuracy(y_pred_train, y_true_train))
+        test_accuracies.append(accuracy(y_pred_test, y_true_test))
 
-        # calculate metrics for test set
-        test_metrics["accuracy"].append(accuracy(y_pred_test, y_true_test))
-        test_metrics["precision"].append(overall_precision(y_pred_test, y_true_test))
-        test_metrics["recall"].append(overall_recall(y_pred_test, y_true_test))
-
-    # create plots
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    # create plot
+    fig, ax = plt.subplots(figsize=(8, 5))
 
     # plot accuracy
-    ax1.plot(move_limits, train_metrics["accuracy"], "b-", label="Train")
-    ax1.plot(move_limits, test_metrics["accuracy"], "r--", label="Test")
-    ax1.set_title("Accuracy vs Moves")
-    ax1.set_xlabel("Number of Moves")
-    ax1.set_ylabel("Accuracy")
-    ax1.legend()
-    ax1.grid(True)
-
-    # plot precision
-    ax2.plot(move_limits, train_metrics["precision"], "b-", label="Train")
-    ax2.plot(move_limits, test_metrics["precision"], "r--", label="Test")
-    ax2.set_title("Precision vs Moves")
-    ax2.set_xlabel("Number of Moves")
-    ax2.set_ylabel("Precision")
-    ax2.legend()
-    ax2.grid(True)
-
-    # plot recall
-    ax3.plot(move_limits, train_metrics["recall"], "b-", label="Train")
-    ax3.plot(move_limits, test_metrics["recall"], "r--", label="Test")
-    ax3.set_title("Recall vs Moves")
-    ax3.set_xlabel("Number of Moves")
-    ax3.set_ylabel("Recall")
-    ax3.legend()
-    ax3.grid(True)
+    ax.plot(move_limits, train_accuracies, "b-", label="Train")
+    ax.plot(move_limits, test_accuracies, "r--", label="Test")
+    ax.set_title("Accuracy vs Moves")
+    ax.set_xlabel("Number of Moves")
+    ax.set_ylabel("Accuracy")
+    ax.legend()
+    ax.grid(True)
 
     plt.tight_layout()
-    plt.savefig("metrics_vs_moves.png")
+    plt.savefig("charts/metrics_vs_moves.png")
     plt.close()
 
 
@@ -193,6 +154,9 @@ if __name__ == "__main__":
     TEST_DATA_PATH = "Data/2024-08/xaa.pgn"
 
     try:
+        # Create charts directory if it doesn't exist
+        os.makedirs("charts", exist_ok=True)
+
         # load model and create initial test loader
         model = load_model(MODEL_PATH)
         model.to(device)
@@ -222,7 +186,7 @@ if __name__ == "__main__":
 
             # plot and save confusion matrix
             fig = plot_confusion_matrix(y_true, y_pred, f"Confusion Matrix ({moves} moves)")
-            plt.savefig(f"confusion_matrix_{moves}moves.png")
+            plt.savefig(f"charts/confusion_matrix_{moves}moves.png")
             plt.close()
 
             # print detailed metrics
