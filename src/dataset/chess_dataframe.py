@@ -11,7 +11,7 @@ import zstandard as zstd
 import io
 from enum import Enum
 
-from src.dataset.helpers import is_valid_game, preprocess_game, HEADERS
+from dataset.helpers import is_valid_game, preprocess_game, HEADERS
 
 
 class Sizes(Enum):

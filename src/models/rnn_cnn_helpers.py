@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
-import src.models.performance_metrics as pm
+import models.performance_metrics as pm
 
 
 # Use a GPU if available, to speed things up

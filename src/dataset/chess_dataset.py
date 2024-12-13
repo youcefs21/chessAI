@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import torch
 import numpy as np
 
-from src.dataset.helpers import board_fen_to_image
+from dataset.helpers import board_fen_to_image
 
 
 def arr_to_imgs(arr):

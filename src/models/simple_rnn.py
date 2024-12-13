@@ -291,18 +291,19 @@ def evaluate_model(model, data, title="Model Evaluation"):
 
     # Preprocess test data and get valid indices
     games, true_labels = preprocess_data(data)
-    X, y = model.prepare_sequences(games, true_labels)  # This will filter short games
+    X, y = model.prepare_sequences(games, true_labels)
     
     # Get predictions for valid sequences only
     predictions_prob = model.predict(X)
-    predictions = (predictions_prob > 0.5).astype(int)
+    predictions = (predictions_prob > 0.5).astype(int).flatten()
+    y = y.flatten()
     
     # Now true_labels and predictions will have matching lengths
     conf_matrix = confusion_matrix(y, predictions)
     class_report = classification_report(y, predictions)
 
     # Calculate ROC curve
-    fpr, tpr, _ = roc_curve(y, predictions_prob)
+    fpr, tpr, _ = roc_curve(y, predictions_prob.flatten())
     roc_auc = auc(fpr, tpr)
 
     # Create visualization
@@ -352,7 +353,7 @@ def evaluate_model(model, data, title="Model Evaluation"):
         "roc_auc": roc_auc,
         "accuracy": accuracy,
         "predictions": predictions,
-        "probabilities": predictions_prob,
+        "probabilities": predictions_prob.flatten(),
         "n_samples": len(y),
         "n_total_games": len(true_labels)
     }
