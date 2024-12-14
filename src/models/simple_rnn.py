@@ -104,7 +104,9 @@ def preprocess_data(data):
         game_elos = np.tile(normalized_elos[i], (len(players[i]), 1))
 
         # Concatenate all features including Elos
-        game_features = np.concatenate([players[i], moving_pieces[i], captured_pieces[i], uci_moves[i], game_elos], axis=1)  # Player info  # Moving piece info  # Captured piece info  # UCI move encoding  # Normalized Elo ratings (2 values per move)
+        game_features = np.concatenate(
+            [players[i], moving_pieces[i], captured_pieces[i], uci_moves[i], game_elos], axis=1
+        )  # Player info  # Moving piece info  # Captured piece info  # UCI move encoding  # Normalized Elo ratings (2 values per move)
 
         games.append(game_features)
 
@@ -126,51 +128,61 @@ class ChessRNN:
         Build the RNN model architecture with improved stability
         """
         logger.info(f"Building model with input shape {input_shape}")
-        
+
         # Create model with Input layer explicitly
         inputs = keras.Input(shape=input_shape)
-        x = Dropout(0.1)(inputs)
-        
+        print(f"inputs: {inputs}")
+        metadata = inputs[:, :, -2:]  # Elo ratings are the last 2 features
+        metadata = metadata[:, 0, :]
+        print(f"metadata: {metadata}")
+        x = Dropout(0.1)(inputs[:, :, :-2])  # Exclude Elo ratings from input
+
         # First RNN layer
-        x = SimpleRNN(128, 
-                    return_sequences=True,
-                    kernel_regularizer=l2(0.001),
-                    recurrent_regularizer=l2(0.001),
-                    kernel_initializer='glorot_uniform',
-                    recurrent_initializer='orthogonal',
-                    activation='tanh')(x)
+        x = SimpleRNN(
+            128,
+            return_sequences=True,
+            kernel_regularizer=l2(0.001),
+            recurrent_regularizer=l2(0.001),
+            kernel_initializer="glorot_uniform",
+            recurrent_initializer="orthogonal",
+            activation="tanh",
+        )(x)
         x = Dropout(0.2)(x)
-        
+
         # Second RNN layer
-        x = SimpleRNN(64,
-                    kernel_regularizer=l2(0.001),
-                    recurrent_regularizer=l2(0.001),
-                    kernel_initializer='glorot_uniform',
-                    recurrent_initializer='orthogonal',
-                    activation='tanh')(x)
+        x = SimpleRNN(
+            64,
+            kernel_regularizer=l2(0.001),
+            recurrent_regularizer=l2(0.001),
+            kernel_initializer="glorot_uniform",
+            recurrent_initializer="orthogonal",
+            activation="tanh",
+        )(x)
         x = Dropout(0.2)(x)
-        
+
         # Dense layers
+
+        x = keras.layers.concatenate([x, metadata])  # Combine RNN output with Elo ratings
         x = Dense(32, activation="relu", kernel_regularizer=l2(0.001))(x)
         x = Dropout(0.1)(x)
         x = Dense(16, activation="relu", kernel_regularizer=l2(0.001))(x)
         outputs = Dense(1, activation="sigmoid")(x)
-        
+
         self.model = keras.Model(inputs=inputs, outputs=outputs)
-        
+
         # Use a more stable optimizer configuration
         optimizer = keras.optimizers.Adam(
             learning_rate=0.001,
             beta_1=0.9,
             beta_2=0.999,
             epsilon=1e-07,
-            clipnorm=1.0
+            clipnorm=1.0,
         )
-        
+
         self.model.compile(
             optimizer=optimizer,
             loss="binary_crossentropy",
-            metrics=["accuracy"]
+            metrics=["accuracy"],
         )
         logger.info("Model compiled successfully")
 
@@ -193,7 +205,14 @@ class ChessRNN:
         logger.info(f"Prepared {len(X)} sequences")
         return np.array(X), np.array(y)
 
-    def train(self, games, results, validation_split=0.2, epochs=10, batch_size=32):
+    def train(
+        self,
+        games,
+        results,
+        validation_split=0.2,
+        epochs=10,
+        batch_size=32,
+    ):
         """
         Train the model with improved training process
         """
@@ -211,23 +230,23 @@ class ChessRNN:
                 monitor="val_loss",
                 patience=15,
                 restore_best_weights=True,
-                min_delta=0.001
+                min_delta=0.001,
             ),
             # Reduce learning rate when plateau
             keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
+                monitor="val_loss",
                 factor=0.5,
                 patience=5,
                 min_lr=0.00001,
-                verbose=1
+                verbose=1,
             ),
             # Model checkpoint with .keras extension
             keras.callbacks.ModelCheckpoint(
-                'best_model.keras',  # Changed from .h5 to .keras
-                monitor='val_accuracy',
+                "best_model.keras",  # Changed from .h5 to .keras
+                monitor="val_accuracy",
                 save_best_only=True,
-                verbose=1
-            )
+                verbose=1,
+            ),
         ]
 
         # Class weights to handle imbalanced data
@@ -235,18 +254,19 @@ class ChessRNN:
         total = len(y)
         class_weights = {
             0: total / (2 * class_counts[0]),
-            1: total / (2 * class_counts[1])
+            1: total / (2 * class_counts[1]),
         }
 
         logger.info(f"Training model with {len(X)} samples")
         history = self.model.fit(
-            X, y,
+            X,
+            y,
             validation_split=validation_split,
             epochs=epochs,
             batch_size=batch_size,
             callbacks=callbacks,
             class_weight=class_weights,
-            shuffle=True
+            shuffle=True,
         )
 
         logger.info("Model training completed")
@@ -292,12 +312,12 @@ def evaluate_model(model, data, title="Model Evaluation"):
     # Preprocess test data and get valid indices
     games, true_labels = preprocess_data(data)
     X, y = model.prepare_sequences(games, true_labels)
-    
+
     # Get predictions for valid sequences only
     predictions_prob = model.predict(X)
     predictions = (predictions_prob > 0.5).astype(int).flatten()
     y = y.flatten()
-    
+
     # Now true_labels and predictions will have matching lengths
     conf_matrix = confusion_matrix(y, predictions)
     class_report = classification_report(y, predictions)
@@ -339,11 +359,11 @@ def evaluate_model(model, data, title="Model Evaluation"):
     # Print classification report and metrics
     logger.info("\nClassification Report:\n" + class_report)
     logger.info(f"ROC AUC Score: {roc_auc:.3f}")
-    
+
     # Calculate additional metrics
     accuracy = (predictions == y).mean()
     logger.info(f"Accuracy: {accuracy:.3f}")
-    
+
     # Log number of samples used
     logger.info(f"Evaluated on {len(y)} samples (filtered from {len(true_labels)} total games)")
 
@@ -355,5 +375,5 @@ def evaluate_model(model, data, title="Model Evaluation"):
         "predictions": predictions,
         "probabilities": predictions_prob.flatten(),
         "n_samples": len(y),
-        "n_total_games": len(true_labels)
+        "n_total_games": len(true_labels),
     }
