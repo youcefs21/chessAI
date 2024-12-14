@@ -1,8 +1,6 @@
 # player (2), piece being moved (6), from square (64)
-# that's an input size of only 136 when hotshot encoded!
-
-# capture (1), piece captured (6)
-# so 143 with these extra features
+# capture (1), piece captured (6), eval score (1)
+# that's an input size of 144 when hotshot encoded!
 
 import logging
 import keras
@@ -82,6 +80,18 @@ def encode_uci(uci):
 def encode_ucis(ucis):
     return np.array([encode_uci(uci) for uci in ucis])
 
+def log_scale(x, global_min, global_max):
+    # Shift all values to be positive
+    shifted = x - global_min + 1  # Add 1 to avoid log(0)
+    shifted_max = global_max - global_min + 1
+    
+    # Apply logarithmic scaling
+    log_scaled = np.log(shifted) / np.log(shifted_max)
+    
+    # For negative evaluations (original values < 0), make the log scaling negative
+    log_scaled = np.where(x < 0, -log_scaled, log_scaled)
+    
+    return log_scaled
 
 def preprocess_data(data):
     # Normalize Elo ratings
@@ -94,22 +104,109 @@ def preprocess_data(data):
     captured_pieces = data["CapturedPiece"].apply(encode_piece).to_numpy()
     uci_moves = data["UCI"].apply(encode_ucis).to_numpy()
     results = data["Result"].to_numpy()
+    evals = data["Eval"].to_numpy()
 
     # Create a list to store all games
     games = []
+
+    # can we scale all the evals at once?
+    # find the global min and max of the evals
+    # Handle each game's evals separately since they have different lengths
+    min_evals = []
+    max_evals = []
+    for eval_array in evals:
+        if len(eval_array) > 0:  # Only process non-empty arrays
+            min_evals.append(np.min(eval_array))
+            max_evals.append(np.max(eval_array))
+    
+    global_min = np.min(min_evals) if min_evals else 0
+    global_max = np.max(max_evals) if max_evals else 0
+    print("global_min: ", global_min)
+    print("global_max: ", global_max)
 
     # Iterate through each game's data
     for i in range(len(players)):
         # Create array of normalized Elos for this game
         game_elos = np.tile(normalized_elos[i], (len(players[i]), 1))
 
-        # Concatenate all features including Elos
-        game_features = np.concatenate([players[i], moving_pieces[i], captured_pieces[i], uci_moves[i], game_elos], axis=1)  # Player info  # Moving piece info  # Captured piece info  # UCI move encoding  # Normalized Elo ratings (2 values per move)
+        game_evals = evals[i]
+        game_evals = log_scale(game_evals, global_min, global_max)
+        game_evals = game_evals.reshape(-1, 1)
+
+        # Concatenate all features including Elos and eval scores
+        game_features = np.concatenate([
+            players[i],              # Player info
+            moving_pieces[i],        # Moving piece info
+            captured_pieces[i],      # Captured piece info
+            uci_moves[i],           # UCI move encoding
+            game_evals,                # Eval scores for each move
+            game_elos               # Normalized Elo ratings (2 values per move)
+        ], axis=1)
 
         games.append(game_features)
 
     return games, results
 
+
+def decode_sequence_element(element):
+    """
+    Decodes a single sequence element into human-readable format.
+    
+    The element contains:
+    - Player (1 value)
+    - Moving piece (6 values)
+    - Captured piece (6 values)
+    - UCI move (128 values - 64 for from square, 64 for to square)
+    - Eval score (1 value)
+    - Elo ratings (2 values - White and Black)
+    """
+    # Reverse mappings
+    piece_types = {v: k for k, v in PIECE_CHANNELS.items()}
+    files = 'abcdefgh'
+    ranks = '12345678'
+    
+    # Extract different parts of the element
+    player = int(element[0])
+    moving_piece_hot = element[1:7]
+    captured_piece_hot = element[7:13]
+    uci_hot = element[13:141]  # 128 values for UCI encoding
+    eval_score = element[141]
+    white_elo = element[142]
+    black_elo = element[143]
+    
+    # Decode moving piece
+    moving_piece_idx = moving_piece_hot.argmax()
+    moving_piece = piece_types.get(moving_piece_idx, 'None')
+    
+    # Decode captured piece
+    captured_piece_idx = captured_piece_hot.argmax()
+    captured_piece = piece_types.get(captured_piece_idx, 'None')
+    
+    # Decode UCI move
+    from_square_hot = uci_hot[:64]
+    to_square_hot = uci_hot[64:128]
+    
+    def square_index_to_notation(idx):
+        file_idx = idx % 8
+        rank_idx = idx // 8
+        return f"{files[file_idx]}{ranks[rank_idx]}"
+    
+    from_square = square_index_to_notation(from_square_hot.argmax())
+    to_square = square_index_to_notation(to_square_hot.argmax())
+    uci = f"{from_square}{to_square}"
+    
+    # Format the output
+    output = (
+        f"Player: {'White' if player == 0 else 'Black'}\n"
+        f"Moving Piece: {moving_piece}\n"
+        f"Captured Piece: {captured_piece}\n"
+        f"Move (UCI): {uci}\n"
+        f"Eval Score: {eval_score:.3f}\n"
+        f"White Elo: {white_elo:.3f}\n"
+        f"Black Elo: {black_elo:.3f}\n"
+    )
+    
+    return output
 
 class ChessRNN:
     def __init__(self, sequence_length=10):
@@ -186,7 +283,9 @@ class ChessRNN:
         for game, result in zip(games, results):
             if len(game) >= self.sequence_length:
                 # Take first sequence_length moves
-                sequence = game[: self.sequence_length]
+                sequence = game[:self.sequence_length]
+                print("result: ", result)
+                print(decode_sequence_element(sequence[0]))
                 X.append(sequence)
                 y.append(result)
 
