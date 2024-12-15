@@ -66,6 +66,7 @@ def board_fen_to_image(board_fen: str):
 
 def move_to_tuple(
     move: pgn.ChildNode,
+    time_control: int,
 ) -> tuple[float, float | None, str | None, str, str, str, str | None]:
     """
     Converts move data to a tuple of the following:
@@ -133,7 +134,7 @@ def move_to_tuple(
         if captured_piece_obj is not None:
             captured_piece = captured_piece_obj.symbol()
 
-    return clk_c / 60, eval_c, eval_c_s, board.fen(), uci, moving_piece, captured_piece
+    return clk_c / time_control, eval_c, eval_c_s, board.fen(), uci, moving_piece, captured_piece
 
 
 def preprocess_game(game: Game):
@@ -141,13 +142,26 @@ def preprocess_game(game: Game):
     result = 1 if game.headers.get("Result") == "1-0" else 0
     white_elo = int(game.headers.get("WhiteElo"))
     black_elo = int(game.headers.get("BlackElo"))
+    time_control = int(game.headers.get("TimeControl").split("+")[0])
 
     # Initialize game data dictionary
-    game_data = {"Result": result, "WhiteElo": white_elo, "BlackElo": black_elo, "Player": [], "Time": [], "Eval": [], "Raw Eval": [], "Board": [], "UCI": [], "MovingPiece": [], "CapturedPiece": []}
+    game_data = {
+        "Result": result,
+        "WhiteElo": white_elo,
+        "BlackElo": black_elo,
+        "Player": [],
+        "Time": [],
+        "Eval": [],
+        "Raw Eval": [],
+        "Board": [],
+        "UCI": [],
+        "MovingPiece": [],
+        "CapturedPiece": [],
+    }
 
     first_move_player = 0
     for move in game.mainline():
-        time, eval_c, raw_eval, board_state, uci, moving_piece, captured_piece = move_to_tuple(move)
+        time, eval_c, raw_eval, board_state, uci, moving_piece, captured_piece = move_to_tuple(move, time_control)
         if eval_c is None:
             break
 
@@ -182,7 +196,7 @@ def is_valid_game(game: Game) -> bool:
         and first_move is not None
         and 20 <= game_length <= 60
         # standard time rules 60+0 time rules
-        and time.time == 60
+        # and time.time == 60
         and time.increment == 0
         and time.delay == 0
         # make sure the clock for each turn is present

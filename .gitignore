@@ -8,3 +8,5 @@ logs/
 *.pgn.zst
 *.pgn
 __pycache__/
+src/data/
+data/

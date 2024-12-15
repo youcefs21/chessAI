@@ -21,10 +21,14 @@ class Sizes(Enum):
     Used for naming dataset files.
     """
 
+    xxs = 100  # for testing - ant
     extra_smol = 1000
     smol = 10_000
     mid = 100_000
+    mid_no_time_restriction = 100_000
     large = 1_000_000
+    large_no_time_restriction = 1_000_000
+    xl = 10_000_000
 
 
 logger = logging.getLogger("chessAI")
@@ -112,10 +116,10 @@ class ChessDataFrame:
         else:
             # read all .pgn files in data/ until done
             done = False
-            for file in os.listdir("data/"):
+            for file in os.listdir("src/data/"):
                 if file.endswith(".pgn"):
                     logger.info(f"Reading {file}...")
-                    with open(f"data/{file}", "r") as pgn_file:
+                    with open(f"src/data/{file}", "r") as pgn_file:
                         done = self.process_stream(pgn_file)
 
                 if done:
