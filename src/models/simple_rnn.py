@@ -16,6 +16,7 @@ from keras.layers import Dropout
 from keras.regularizers import l2
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
+from livelossplot import PlotLossesKeras
 
 PIECE_CHANNELS = {
     "P": 0,
@@ -80,18 +81,20 @@ def encode_uci(uci):
 def encode_ucis(ucis):
     return np.array([encode_uci(uci) for uci in ucis])
 
+
 def log_scale(x, global_min, global_max):
     # Shift all values to be positive
     shifted = x - global_min + 1  # Add 1 to avoid log(0)
     shifted_max = global_max - global_min + 1
-    
+
     # Apply logarithmic scaling
     log_scaled = np.log(shifted) / np.log(shifted_max)
-    
+
     # For negative evaluations (original values < 0), make the log scaling negative
     log_scaled = np.where(x < 0, -log_scaled, log_scaled)
-    
+
     return log_scaled
+
 
 def preprocess_data(data):
     # Normalize Elo ratings
@@ -118,7 +121,7 @@ def preprocess_data(data):
         if len(eval_array) > 0:  # Only process non-empty arrays
             min_evals.append(np.min(eval_array))
             max_evals.append(np.max(eval_array))
-    
+
     global_min = np.min(min_evals) if min_evals else 0
     global_max = np.max(max_evals) if max_evals else 0
     print("global_min: ", global_min)
@@ -134,14 +137,17 @@ def preprocess_data(data):
         game_evals = game_evals.reshape(-1, 1)
 
         # Concatenate all features including Elos and eval scores
-        game_features = np.concatenate([
-            players[i],              # Player info
-            moving_pieces[i],        # Moving piece info
-            captured_pieces[i],      # Captured piece info
-            uci_moves[i],           # UCI move encoding
-            game_evals,                # Eval scores for each move
-            game_elos               # Normalized Elo ratings (2 values per move)
-        ], axis=1)
+        game_features = np.concatenate(
+            [
+                players[i],  # Player info
+                moving_pieces[i],  # Moving piece info
+                captured_pieces[i],  # Captured piece info
+                uci_moves[i],  # UCI move encoding
+                game_evals,  # Eval scores for each move
+                game_elos,  # Normalized Elo ratings (2 values per move)
+            ],
+            axis=1,
+        )
 
         games.append(game_features)
 
@@ -151,7 +157,7 @@ def preprocess_data(data):
 def decode_sequence_element(element):
     """
     Decodes a single sequence element into human-readable format.
-    
+
     The element contains:
     - Player (1 value)
     - Moving piece (6 values)
@@ -162,9 +168,9 @@ def decode_sequence_element(element):
     """
     # Reverse mappings
     piece_types = {v: k for k, v in PIECE_CHANNELS.items()}
-    files = 'abcdefgh'
-    ranks = '12345678'
-    
+    files = "abcdefgh"
+    ranks = "12345678"
+
     # Extract different parts of the element
     player = int(element[0])
     moving_piece_hot = element[1:7]
@@ -173,28 +179,28 @@ def decode_sequence_element(element):
     eval_score = element[141]
     white_elo = element[142]
     black_elo = element[143]
-    
+
     # Decode moving piece
     moving_piece_idx = moving_piece_hot.argmax()
-    moving_piece = piece_types.get(moving_piece_idx, 'None')
-    
+    moving_piece = piece_types.get(moving_piece_idx, "None")
+
     # Decode captured piece
     captured_piece_idx = captured_piece_hot.argmax()
-    captured_piece = piece_types.get(captured_piece_idx, 'None')
-    
+    captured_piece = piece_types.get(captured_piece_idx, "None")
+
     # Decode UCI move
     from_square_hot = uci_hot[:64]
     to_square_hot = uci_hot[64:128]
-    
+
     def square_index_to_notation(idx):
         file_idx = idx % 8
         rank_idx = idx // 8
         return f"{files[file_idx]}{ranks[rank_idx]}"
-    
+
     from_square = square_index_to_notation(from_square_hot.argmax())
     to_square = square_index_to_notation(to_square_hot.argmax())
     uci = f"{from_square}{to_square}"
-    
+
     # Format the output
     output = (
         f"Player: {'White' if player == 0 else 'Black'}\n"
@@ -205,8 +211,20 @@ def decode_sequence_element(element):
         f"White Elo: {white_elo:.3f}\n"
         f"Black Elo: {black_elo:.3f}\n"
     )
-    
+
     return output
+
+
+class PlotGraphCallback(keras.callbacks.Callback):
+    def __init__(self, data, title):
+        self.data = data
+        self.title = title
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Evaluate model on test data
+        metrics = self.model.evaluate(self.data, self.title, return_dict=True)
+        logger.info(f"Plotgraphcallback metrics: {metrics}")
+
 
 class ChessRNN:
     def __init__(self, sequence_length=10):
@@ -223,52 +241,56 @@ class ChessRNN:
         Build the RNN model architecture with improved stability
         """
         logger.info(f"Building model with input shape {input_shape}")
-        
+
         # Create model with Input layer explicitly
         inputs = keras.Input(shape=input_shape)
-        x = Dropout(0.1)(inputs)
-        
+        metadata_inputs = inputs[:, :, -2:]  # Elo ratings are the last 2 features
+        metadata_inputs = metadata_inputs[:, 0, :]
+
+        x = Dropout(0.1)(inputs[:, :, :-2])
+
         # First RNN layer
-        x = SimpleRNN(128, 
-                    return_sequences=True,
-                    kernel_regularizer=l2(0.001),
-                    recurrent_regularizer=l2(0.001),
-                    kernel_initializer='glorot_uniform',
-                    recurrent_initializer='orthogonal',
-                    activation='tanh')(x)
+        x = keras.layers.LSTM(
+            128,
+            return_sequences=True,
+            kernel_regularizer=l2(0.001),
+            recurrent_regularizer=l2(0.001),
+            kernel_initializer="glorot_uniform",
+            recurrent_initializer="orthogonal",
+            activation="tanh",
+        )(x)
         x = Dropout(0.2)(x)
-        
+
         # Second RNN layer
-        x = SimpleRNN(64,
-                    kernel_regularizer=l2(0.001),
-                    recurrent_regularizer=l2(0.001),
-                    kernel_initializer='glorot_uniform',
-                    recurrent_initializer='orthogonal',
-                    activation='tanh')(x)
+        x = keras.layers.LSTM(
+            64,
+            kernel_regularizer=l2(0.001),
+            recurrent_regularizer=l2(0.001),
+            kernel_initializer="glorot_uniform",
+            recurrent_initializer="orthogonal",
+            activation="tanh",
+        )(x)
         x = Dropout(0.2)(x)
-        
+
         # Dense layers
+        x = keras.layers.concatenate([x, metadata_inputs])  # Combine RNN output with Elo ratings
         x = Dense(32, activation="relu", kernel_regularizer=l2(0.001))(x)
         x = Dropout(0.1)(x)
         x = Dense(16, activation="relu", kernel_regularizer=l2(0.001))(x)
         outputs = Dense(1, activation="sigmoid")(x)
-        
+
         self.model = keras.Model(inputs=inputs, outputs=outputs)
-        
+
         # Use a more stable optimizer configuration
         optimizer = keras.optimizers.Adam(
-            learning_rate=0.001,
+            learning_rate=0.005,
             beta_1=0.9,
             beta_2=0.999,
             epsilon=1e-07,
-            clipnorm=1.0
+            clipnorm=1.0,
         )
-        
-        self.model.compile(
-            optimizer=optimizer,
-            loss="binary_crossentropy",
-            metrics=["accuracy"]
-        )
+
+        self.model.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"])
         logger.info("Model compiled successfully")
 
     def prepare_sequences(self, games, results):
@@ -283,9 +305,9 @@ class ChessRNN:
         for game, result in zip(games, results):
             if len(game) >= self.sequence_length:
                 # Take first sequence_length moves
-                sequence = game[:self.sequence_length]
-                print("result: ", result)
-                print(decode_sequence_element(sequence[0]))
+                sequence = game[: self.sequence_length]
+                # print("result: ", result)
+                # print(decode_sequence_element(sequence[0]))
                 X.append(sequence)
                 y.append(result)
 
@@ -310,42 +332,44 @@ class ChessRNN:
                 monitor="val_loss",
                 patience=15,
                 restore_best_weights=True,
-                min_delta=0.001
+                min_delta=0.001,
             ),
             # Reduce learning rate when plateau
             keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
+                monitor="val_loss",
                 factor=0.5,
                 patience=5,
                 min_lr=0.00001,
-                verbose=1
+                verbose=1,
             ),
             # Model checkpoint with .keras extension
             keras.callbacks.ModelCheckpoint(
-                'best_model.keras',  # Changed from .h5 to .keras
-                monitor='val_accuracy',
+                "best_model.keras",
+                # monitor="val_accuracy",
+                monitor="val_loss",
                 save_best_only=True,
-                verbose=1
-            )
+                verbose=1,
+            ),  # Changed from .h5 to .keras
+            # PlotGraphCallback(X, y),
+            # PlotLossesKeras(mode="script"),
         ]
 
         # Class weights to handle imbalanced data
         class_counts = np.bincount(y.astype(int))
         total = len(y)
-        class_weights = {
-            0: total / (2 * class_counts[0]),
-            1: total / (2 * class_counts[1])
-        }
+        class_weights = {0: total / (2 * class_counts[0]), 1: total / (2 * class_counts[1])}
 
         logger.info(f"Training model with {len(X)} samples")
         history = self.model.fit(
-            X, y,
+            X,
+            y,
             validation_split=validation_split,
             epochs=epochs,
             batch_size=batch_size,
+            validation_batch_size=batch_size,
             callbacks=callbacks,
             class_weight=class_weights,
-            shuffle=True
+            shuffle=True,
         )
 
         logger.info("Model training completed")
@@ -377,7 +401,10 @@ def train_rnn(data, steps_per_game):
     rnn = ChessRNN(steps_per_game)
     games, results = preprocess_data(data)
     logger.info(f"Preprocessed {len(games)} games")
-    history = rnn.train(games, results, epochs=200)
+    history = rnn.train(games, results, epochs=10, batch_size=128)
+    # history = rnn.train(games, results, epochs=200, batch_size=128)
+    print(history)
+    print(history.history)
     logger.info("RNN training completed")
     return rnn
 
@@ -391,12 +418,12 @@ def evaluate_model(model, data, title="Model Evaluation"):
     # Preprocess test data and get valid indices
     games, true_labels = preprocess_data(data)
     X, y = model.prepare_sequences(games, true_labels)
-    
+
     # Get predictions for valid sequences only
     predictions_prob = model.predict(X)
     predictions = (predictions_prob > 0.5).astype(int).flatten()
     y = y.flatten()
-    
+
     # Now true_labels and predictions will have matching lengths
     conf_matrix = confusion_matrix(y, predictions)
     class_report = classification_report(y, predictions)
@@ -438,11 +465,11 @@ def evaluate_model(model, data, title="Model Evaluation"):
     # Print classification report and metrics
     logger.info("\nClassification Report:\n" + class_report)
     logger.info(f"ROC AUC Score: {roc_auc:.3f}")
-    
+
     # Calculate additional metrics
     accuracy = (predictions == y).mean()
     logger.info(f"Accuracy: {accuracy:.3f}")
-    
+
     # Log number of samples used
     logger.info(f"Evaluated on {len(y)} samples (filtered from {len(true_labels)} total games)")
 
@@ -454,5 +481,5 @@ def evaluate_model(model, data, title="Model Evaluation"):
         "predictions": predictions,
         "probabilities": predictions_prob.flatten(),
         "n_samples": len(y),
-        "n_total_games": len(true_labels)
+        "n_total_games": len(true_labels),
     }
