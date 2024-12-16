@@ -27,3 +27,4 @@ plt.grid(True)
 plt.legend()
 plt.savefig("test_models/accuracy_vs_moves.png")
 plt.show()
+
