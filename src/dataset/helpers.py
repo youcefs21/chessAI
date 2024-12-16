@@ -191,10 +191,12 @@ def is_valid_game(game: Game) -> bool:
 
     return (
         # needs to be a nice normal game with 20-60 moves
-        game.headers.get("Termination") == "Normal"
-        and game.headers.get("Result") != "1/2-1/2"  # exclude draws
+        # game.headers.get("Termination") == "Normal"
+        # and game.headers.get("Result") != "1/2-1/2"  # exclude draws
+        game.headers.get("Result") != "1/2-1/2"  # exclude draws
         and first_move is not None
-        and 20 <= game_length <= 60
+        # and 20 <= game_length <= 60
+        and 10 <= game_length <= 60
         # standard time rules 60+0 time rules
         # and time.time == 60
         and time.increment == 0

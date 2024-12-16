@@ -6,6 +6,6 @@ from logging_config import setup_logging
 
 logger = setup_logging()
 
-df = ChessDataFrame(size=Sizes.mid_no_time_restriction)
+df = ChessDataFrame(size=Sizes.large_no_time_or_ending_restriction)
 df.create_dataset()
 df.save_dataset()

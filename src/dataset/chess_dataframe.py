@@ -25,9 +25,10 @@ class Sizes(Enum):
     extra_smol = 1000
     smol = 10_000
     mid = 100_000
-    mid_no_time_restriction = 100_000
+    mid_no_time_restriction = 100_001
     large = 1_000_000
-    large_no_time_restriction = 1_000_000
+    large_no_time_restriction = 1_000_001
+    large_no_time_or_ending_restriction = 1_000_002
     xl = 10_000_000
 
 
