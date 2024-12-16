@@ -13,7 +13,7 @@ chess_df = ChessDataFrame(size=size)
 acc = []
 
 for i in range(10, 20):
-    rnn = train_rnn(chess_df.df_train, i, False)
+    rnn = train_rnn(chess_df.df_train, steps_per_game=i, plot=False)
     metrics = evaluate_model(rnn, chess_df.df_test, "Chess RNN Evaluation", False)
     acc.append(metrics["accuracy"])
 
