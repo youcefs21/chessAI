@@ -73,7 +73,9 @@ class ChessDataFrame:
 
     def load_dataset(self):
         self.df_train = pd.read_parquet(f"hf://datasets/{self.repo_id}/train_{self.size.name}.parquet")
+        logger.info(f"Loaded {len(self.df_train)} train games")
         self.df_test = pd.read_parquet(f"hf://datasets/{self.repo_id}/test_{self.size.name}.parquet")
+        logger.info(f"Loaded {len(self.df_test)} test games")
 
     def process_stream(self, text_stream: TextIO):
         while True:
@@ -117,10 +119,10 @@ class ChessDataFrame:
         else:
             # read all .pgn files in data/ until done
             done = False
-            for file in os.listdir("src/data/"):
+            for file in os.listdir("data/"):
                 if file.endswith(".pgn"):
                     logger.info(f"Reading {file}...")
-                    with open(f"src/data/{file}", "r") as pgn_file:
+                    with open(f"data/{file}", "r") as pgn_file:
                         done = self.process_stream(pgn_file)
 
                 if done:

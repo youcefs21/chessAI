@@ -123,8 +123,8 @@ def preprocess_data(data):
 
     global_min = np.min(min_evals) if min_evals else 0
     global_max = np.max(max_evals) if max_evals else 0
-    print("global_min: ", global_min)
-    print("global_max: ", global_max)
+    logger.debug("global_min: %s", global_min)
+    logger.debug("global_max: %s", global_max)
 
     # Iterate through each game's data
     for i in range(len(players)):
@@ -295,15 +295,23 @@ class ChessRNN:
             if len(game) >= self.sequence_length:
                 # Take first sequence_length moves
                 sequence = game[: self.sequence_length]
-                print("result: ", result)
-                print(decode_sequence_element(sequence[0]))
+                # print("result: ", result)
+                # print(decode_sequence_element(sequence[0]))
                 X.append(sequence)
                 y.append(result)
 
         logger.info(f"Prepared {len(X)} sequences")
         return np.array(X), np.array(y)
 
-    def train(self, games, results, validation_split=0.2, epochs=10, batch_size=32):
+    def train(
+        self,
+        games,
+        results,
+        validation_split=0.2,
+        epochs=10,
+        batch_size=32,
+        model_name="best_model.keras",
+    ):
         """
         Train the model with improved training process
         """
@@ -333,7 +341,7 @@ class ChessRNN:
             ),
             # Model checkpoint with .keras extension
             keras.callbacks.ModelCheckpoint(
-                "best_model.keras",  # Changed from .h5 to .keras
+                model_name,  # Changed from .h5 to .keras
                 monitor="val_accuracy",
                 save_best_only=True,
                 verbose=1,
@@ -385,15 +393,17 @@ class ChessRNN:
         return metrics
 
 
-def train_rnn(data, steps_per_game, plot=True):
+def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True):
     logger.info(f"Training RNN with {steps_per_game} steps per game")
     rnn = ChessRNN(steps_per_game)
     games, results = preprocess_data(data)
     logger.info(f"Preprocessed {len(games)} games")
-    history = rnn.train(games, results, epochs=200, batch_size=128)
-    if plot: plot_training_history(history)
+    history = rnn.train(games, results, epochs=200, batch_size=128, model_name=model_name)
+    if plot:
+        plot_training_history(history)
     logger.info("RNN training completed")
     return rnn
+
 
 def plot_training_history(history):
     """
@@ -421,7 +431,9 @@ def plot_training_history(history):
     plt.legend()
 
     plt.tight_layout()
+    plt.savefig("training_history.png")
     plt.show()
+
 
 def evaluate_model(model, data, title="Model Evaluation", plot=True):
     """
@@ -446,7 +458,7 @@ def evaluate_model(model, data, title="Model Evaluation", plot=True):
     fpr, tpr, _ = roc_curve(y, predictions_prob.flatten())
     roc_auc = auc(fpr, tpr)
 
-    if plot: 
+    if plot:
         # Create visualization
         plt.figure(figsize=(15, 5))
 
