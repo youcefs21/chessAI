@@ -123,8 +123,8 @@ def preprocess_data(data):
 
     global_min = np.min(min_evals) if min_evals else 0
     global_max = np.max(max_evals) if max_evals else 0
-    print("global_min: ", global_min)
-    print("global_max: ", global_max)
+    logger.debug("global_min: %s", global_min)
+    logger.debug("global_max: %s", global_max)
 
     # Iterate through each game's data
     for i in range(len(players)):
@@ -295,8 +295,8 @@ class ChessRNN:
             if len(game) >= self.sequence_length:
                 # Take first sequence_length moves
                 sequence = game[: self.sequence_length]
-                print("result: ", result)
-                print(decode_sequence_element(sequence[0]))
+                # print("result: ", result)
+                # print(decode_sequence_element(sequence[0]))
                 X.append(sequence)
                 y.append(result)
 
