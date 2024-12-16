@@ -73,7 +73,9 @@ class ChessDataFrame:
 
     def load_dataset(self):
         self.df_train = pd.read_parquet(f"hf://datasets/{self.repo_id}/train_{self.size.name}.parquet")
+        logger.info(f"Loaded {len(self.df_train)} train games")
         self.df_test = pd.read_parquet(f"hf://datasets/{self.repo_id}/test_{self.size.name}.parquet")
+        logger.info(f"Loaded {len(self.df_test)} test games")
 
     def process_stream(self, text_stream: TextIO):
         while True:
