@@ -385,13 +385,13 @@ class ChessRNN:
         return metrics
 
 
-def train_rnn(data, steps_per_game):
+def train_rnn(data, steps_per_game, plot=True):
     logger.info(f"Training RNN with {steps_per_game} steps per game")
     rnn = ChessRNN(steps_per_game)
     games, results = preprocess_data(data)
     logger.info(f"Preprocessed {len(games)} games")
     history = rnn.train(games, results, epochs=200, batch_size=128)
-    plot_training_history(history)
+    if plot: plot_training_history(history)
     logger.info("RNN training completed")
     return rnn
 
@@ -423,7 +423,7 @@ def plot_training_history(history):
     plt.tight_layout()
     plt.show()
 
-def evaluate_model(model, data, title="Model Evaluation"):
+def evaluate_model(model, data, title="Model Evaluation", plot=True):
     """
     Comprehensive evaluation of the model including metrics and visualizations
     """
@@ -446,37 +446,38 @@ def evaluate_model(model, data, title="Model Evaluation"):
     fpr, tpr, _ = roc_curve(y, predictions_prob.flatten())
     roc_auc = auc(fpr, tpr)
 
-    # Create visualization
-    plt.figure(figsize=(15, 5))
+    if plot: 
+        # Create visualization
+        plt.figure(figsize=(15, 5))
 
-    # Plot 1: Confusion Matrix
-    plt.subplot(131)
-    sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues")
-    plt.title(f"{title}\nConfusion Matrix")
-    plt.xlabel("Predicted")
-    plt.ylabel("Actual")
+        # Plot 1: Confusion Matrix
+        plt.subplot(131)
+        sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues")
+        plt.title(f"{title}\nConfusion Matrix")
+        plt.xlabel("Predicted")
+        plt.ylabel("Actual")
 
-    # Plot 2: ROC Curve
-    plt.subplot(132)
-    plt.plot(fpr, tpr, color="darkorange", lw=2, label=f"ROC curve (AUC = {roc_auc:.2f})")
-    plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve")
-    plt.legend(loc="lower right")
+        # Plot 2: ROC Curve
+        plt.subplot(132)
+        plt.plot(fpr, tpr, color="darkorange", lw=2, label=f"ROC curve (AUC = {roc_auc:.2f})")
+        plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve")
+        plt.legend(loc="lower right")
 
-    # Plot 3: Prediction Distribution
-    plt.subplot(133)
-    sns.histplot(predictions_prob, bins=50)
-    plt.title("Prediction Distribution")
-    plt.xlabel("Predicted Probability")
-    plt.ylabel("Count")
+        # Plot 3: Prediction Distribution
+        plt.subplot(133)
+        sns.histplot(predictions_prob, bins=50)
+        plt.title("Prediction Distribution")
+        plt.xlabel("Predicted Probability")
+        plt.ylabel("Count")
 
-    plt.tight_layout()
+        plt.tight_layout()
 
-    plt.show()
+        plt.show()
 
     # Print classification report and metrics
     logger.info("\nClassification Report:\n" + class_report)
