@@ -6,7 +6,7 @@ from logging_config import setup_logging
 from models.simple_rnn import train_rnn, evaluate_model
 
 # consts
-size = Sizes.mid_no_time_restriction
+size = Sizes.large
 
 # Setup logging
 logger = setup_logging()
@@ -18,7 +18,7 @@ logger.info(f"Using device: {device}")
 chess_df = ChessDataFrame(size=size)
 logger.info("Successfully initialized ChessDataFrame")
 
-rnn = train_rnn(chess_df.df_train, 20)
+rnn = train_rnn(chess_df.df_train, 30)
 
 metrics = evaluate_model(rnn, chess_df.df_test, "Chess RNN Evaluation")
 logger.info(metrics)

@@ -431,6 +431,7 @@ def plot_training_history(history):
     plt.legend()
 
     plt.tight_layout()
+    plt.savefig("training_history.png")
     plt.show()
 
 

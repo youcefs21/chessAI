@@ -117,10 +117,10 @@ class ChessDataFrame:
         else:
             # read all .pgn files in data/ until done
             done = False
-            for file in os.listdir("src/data/"):
+            for file in os.listdir("data/"):
                 if file.endswith(".pgn"):
                     logger.info(f"Reading {file}...")
-                    with open(f"src/data/{file}", "r") as pgn_file:
+                    with open(f"data/{file}", "r") as pgn_file:
                         done = self.process_stream(pgn_file)
 
                 if done:
