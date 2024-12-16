@@ -215,7 +215,7 @@ def decode_sequence_element(element):
 
 
 class ChessRNN:
-    def __init__(self, sequence_length=10):
+    def __init__(self, sequence_length=10, LR=0.001, validation_split=0.2, epochs=10, batch_size=32):
         """
         Initialize the RNN model
         sequence_length: number of moves to consider from start of game
@@ -223,6 +223,10 @@ class ChessRNN:
         logger.info(f"Initializing ChessRNN with sequence length {sequence_length}")
         self.sequence_length = sequence_length
         self.model = None
+        self.LR = LR
+        self.validation_split = validation_split
+        self.epochs = epochs
+        self.batch_size = batch_size
 
     def build_model(self, input_shape):
         """
@@ -242,8 +246,8 @@ class ChessRNN:
         x = SimpleRNN(
             128,
             return_sequences=True,
-            kernel_regularizer=l2(0.001),
-            recurrent_regularizer=l2(0.001),
+            kernel_regularizer=l2(self.LR),
+            recurrent_regularizer=l2(self.LR),
             kernel_initializer="glorot_uniform",
             recurrent_initializer="orthogonal",
             activation="tanh",
@@ -253,8 +257,8 @@ class ChessRNN:
         # Second RNN layer
         x = SimpleRNN(
             64,
-            kernel_regularizer=l2(0.001),
-            recurrent_regularizer=l2(0.001),
+            kernel_regularizer=l2(self.LR),
+            recurrent_regularizer=l2(self.LR),
             kernel_initializer="glorot_uniform",
             recurrent_initializer="orthogonal",
             activation="tanh",
@@ -263,16 +267,16 @@ class ChessRNN:
 
         # Dense layers
         x = keras.layers.concatenate([x, metadata_inputs])  # Combine RNN output with Elo ratings
-        x = Dense(32, activation="relu", kernel_regularizer=l2(0.001))(x)
+        x = Dense(32, activation="relu", kernel_regularizer=l2(self.LR))(x)
         x = Dropout(0.1)(x)
-        x = Dense(16, activation="relu", kernel_regularizer=l2(0.001))(x)
+        x = Dense(16, activation="relu", kernel_regularizer=l2(self.LR))(x)
         outputs = Dense(1, activation="sigmoid")(x)
 
         self.model = keras.Model(inputs=inputs, outputs=outputs)
 
         # Use a more stable optimizer configuration
         optimizer = keras.optimizers.Adam(
-            learning_rate=0.001,
+            learning_rate=self.LR,
             beta_1=0.9,
             beta_2=0.999,
             epsilon=1e-07,
@@ -303,15 +307,7 @@ class ChessRNN:
         logger.info(f"Prepared {len(X)} sequences")
         return np.array(X), np.array(y)
 
-    def train(
-        self,
-        games,
-        results,
-        validation_split=0.2,
-        epochs=10,
-        batch_size=32,
-        model_name="best_model.keras",
-    ):
+    def train(self, games, results, model_name):
         """
         Train the model with improved training process
         """
@@ -360,10 +356,10 @@ class ChessRNN:
         history = self.model.fit(
             X,
             y,
-            validation_split=validation_split,
-            epochs=epochs,
-            batch_size=batch_size,
-            validation_batch_size=batch_size,
+            validation_split=self.validation_split,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            validation_batch_size=self.batch_size,
             callbacks=callbacks,
             class_weight=class_weights,
             shuffle=True,
@@ -393,12 +389,12 @@ class ChessRNN:
         return metrics
 
 
-def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True):
+def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True, LR = 0.001, epochs=10, batch_size=32):
     logger.info(f"Training RNN with {steps_per_game} steps per game")
-    rnn = ChessRNN(steps_per_game)
+    rnn = ChessRNN(steps_per_game, LR, 0.2, epochs, batch_size)
     games, results = preprocess_data(data)
     logger.info(f"Preprocessed {len(games)} games")
-    history = rnn.train(games, results, epochs=200, batch_size=128, model_name=model_name)
+    history = rnn.train(games, results, model_name=model_name)
     if plot:
         plot_training_history(history)
     logger.info("RNN training completed")
