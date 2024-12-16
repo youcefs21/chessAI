@@ -391,9 +391,37 @@ def train_rnn(data, steps_per_game):
     games, results = preprocess_data(data)
     logger.info(f"Preprocessed {len(games)} games")
     history = rnn.train(games, results, epochs=200, batch_size=128)
+    plot_training_history(history)
     logger.info("RNN training completed")
     return rnn
 
+def plot_training_history(history):
+    """
+    Plot the training and validation loss and accuracy
+    """
+    import matplotlib.pyplot as plt
+
+    # Loss Plot
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history["loss"], label="Training Loss")
+    plt.plot(history.history["val_loss"], label="Validation Loss")
+    plt.title("Loss Curve")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+
+    # Accuracy Plot
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history["accuracy"], label="Training Accuracy")
+    plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+    plt.title("Accuracy Curve")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 def evaluate_model(model, data, title="Model Evaluation"):
     """
@@ -447,6 +475,8 @@ def evaluate_model(model, data, title="Model Evaluation"):
     plt.ylabel("Count")
 
     plt.tight_layout()
+
+    plt.show()
 
     # Print classification report and metrics
     logger.info("\nClassification Report:\n" + class_report)
