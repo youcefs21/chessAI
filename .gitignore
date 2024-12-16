@@ -10,3 +10,4 @@ logs/
 __pycache__/
 src/data/
 data/
+test_models/
