@@ -105,6 +105,33 @@ PIECE_CHANNELS = {
     "k": 12,
 }
 
+def board_fen_to_image(board_fen: str):
+    """
+    Preprocess a chess board to a 12-channel image (one channel per piece).
+    Input is the board state expressed as a FEN string.
+
+    There are 12 planes: Each plane corresponds to one type of piece (e.g., white pawn, black rook).
+    """
+
+    pieces = board_fen.split(" ")[0]
+    rows = pieces.split("/")
+    board = np.zeros((12, 8, 8), dtype=np.int8)
+
+    # Populate piece planes
+    for i, row in enumerate(rows):
+        j = 0
+        for char in row:
+            if char.isdigit():
+                j += int(char)
+                continue
+
+            piece_index = PIECE_CHANNELS[char]
+            board[piece_index - 1, i, j] = 1
+            j += 1
+
+    return board
+
+
 def move_to_tuple(
     move: pgn.ChildNode,
     time_control: int,
@@ -504,9 +531,9 @@ class ChessRNN:
         """
         logger.info(f"Building model with input shape {input_shape}")
 
-        # Create model with Input layer explicitly
+        # create model with Input layer explicitly
         inputs = keras.Input(shape=input_shape)
-        metadata_inputs = inputs[:, :, -2:]  # Elo ratings are the last 2 features
+        metadata_inputs = inputs[:, :, -2:]  # elo ratings are the last 2 features
         metadata_inputs = metadata_inputs[:, 0, :]
 
         x = Dropout(0.1)(inputs[:, :, :-2])
@@ -524,7 +551,7 @@ class ChessRNN:
         )(x)
         x = Dropout(0.2)(x)
 
-        # Second RNN layer
+        # second RNN layer
         x = SimpleRNN(
             64,
             kernel_regularizer=l2(self.LR),
@@ -535,8 +562,8 @@ class ChessRNN:
         )(x)
         x = Dropout(0.2)(x)
 
-        # Dense layers
-        x = keras.layers.concatenate([x, metadata_inputs])  # Combine RNN output with Elo ratings
+        # dense layers
+        x = keras.layers.concatenate([x, metadata_inputs])  # combine RNN output with Elo ratings
         x = Dense(32, activation="relu", kernel_regularizer=l2(self.LR))(x)
         x = Dropout(0.1)(x)
         x = Dense(16, activation="relu", kernel_regularizer=l2(self.LR))(x)
@@ -544,7 +571,7 @@ class ChessRNN:
 
         self.model = keras.Model(inputs=inputs, outputs=outputs)
 
-        # Use a more stable optimizer configuration
+        # configure Adam optimizer with default hyperparameters and gradient clipping
         optimizer = keras.optimizers.Adam(
             learning_rate=self.LR,
             beta_1=0.9,
@@ -588,16 +615,15 @@ class ChessRNN:
             input_shape = (self.sequence_length, X.shape[2])
             self.build_model(input_shape)
 
-        # More sophisticated callbacks
         callbacks = [
-            # Early stopping with longer patience
+            # early stopping if val_loss doesn't improve for 15 epochs
             keras.callbacks.EarlyStopping(
                 monitor="val_loss",
                 patience=15,
                 restore_best_weights=True,
                 min_delta=0.001,
             ),
-            # Reduce learning rate when plateau
+            # reduce learning rate when plateau
             keras.callbacks.ReduceLROnPlateau(
                 monitor="val_loss",
                 factor=0.5,
@@ -605,16 +631,16 @@ class ChessRNN:
                 min_lr=0.00001,
                 verbose=1,
             ),
-            # Model checkpoint with .keras extension
+            # model checkpoint with .keras extension
             keras.callbacks.ModelCheckpoint(
-                model_name,  # Changed from .h5 to .keras
+                model_name, 
                 monitor="val_accuracy",
                 save_best_only=True,
                 verbose=1,
             ),
         ]
 
-        # Class weights to handle imbalanced data
+        # class weights to handle imbalanced data
         class_counts = np.bincount(y.astype(int))
         total = len(y)
         class_weights = {
@@ -658,23 +684,466 @@ class ChessRNN:
         logger.info(f"Evaluation metrics: {metrics}")
         return metrics
 
+def plot_training_history(history):
+    """
+    Plot the training and validation loss and accuracy
+    """
+    import matplotlib.pyplot as plt
+
+    # Loss Plot
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history["loss"], label="Training Loss")
+    plt.plot(history.history["val_loss"], label="Validation Loss")
+    plt.title("Loss Curve")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+
+    # Accuracy Plot
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history["accuracy"], label="Training Accuracy")
+    plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+    plt.title("Accuracy Curve")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig("training_history.png")
+    plt.show()
+
 def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True, LR = 0.001, epochs=10, batch_size=32):
     logger.info(f"Training RNN with {steps_per_game} steps per game")
+
     rnn = ChessRNN(steps_per_game, LR, 0.2, epochs, batch_size)
     games, results = preprocess_data(data)
+
     logger.info(f"Preprocessed {len(games)} games")
-    rnn.train(games, results, model_name=model_name)
+    history = rnn.train(games, results, model_name=model_name)
+
+    if plot:
+        plot_training_history(history)
     logger.info("RNN training completed")
     return rnn
 
-# consts
-size = Sizes.smol
 
-device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
-logger.info(f"Using device: {device}")
+if __name__ == "__main__":
+    # consts
+    size = Sizes.smol
 
-# Initialize the chess dataframe
-chess_df = ChessDataFrame(size=size)
-logger.info("Successfully initialized ChessDataFrame")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
 
-rnn = train_rnn(chess_df.df_train, 30)
+    # Initialize the chess dataframe
+    chess_df = ChessDataFrame(size=size)
+    logger.info("Successfully initialized ChessDataFrame")
+
+    rnn = train_rnn(chess_df.df_train, 30)
+
+
+#######################################################
+### this was used to measure the usefulness of CNNs ###
+#######################################################
+# class ChessEvalNet(nn.Module):
+#     def __init__(self):
+#         super(ChessEvalNet, self).__init__()
+        
+#         # Convolutional layers
+#         self.conv1 = nn.Conv2d(12, 64, kernel_size=3, padding=1)
+#         self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+#         self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        
+#         # Batch normalization layers
+#         self.bn1 = nn.BatchNorm2d(64)
+#         self.bn2 = nn.BatchNorm2d(128)
+#         self.bn3 = nn.BatchNorm2d(256)
+        
+#         # Fully connected layers
+#         self.fc1 = nn.Linear(256 * 8 * 8, 512)
+#         self.fc2 = nn.Linear(512, 256)
+#         self.fc3 = nn.Linear(256, 1)
+        
+#         self.relu = nn.ReLU()
+#         self.dropout = nn.Dropout(0.2)
+
+#     def forward(self, x):
+#         # Convolutional blocks
+#         x = self.relu(self.bn1(self.conv1(x)))
+#         x = self.relu(self.bn2(self.conv2(x)))
+#         x = self.relu(self.bn3(self.conv3(x)))
+        
+#         # Flatten and fully connected layers
+#         x = x.view(-1, 256 * 8 * 8)
+#         x = self.dropout(self.relu(self.fc1(x)))
+#         x = self.dropout(self.relu(self.fc2(x)))
+#         x = self.fc3(x)
+        
+#         return x
+
+# # Create model and move to device
+# model = ChessEvalNet().to(device)
+
+# # Convert data to tensors and create DataLoader
+# X_train = torch.FloatTensor(train_X).to(device)
+# y_train = torch.FloatTensor(train_Y).to(device)
+# X_test = torch.FloatTensor(test_X).to(device)
+# y_test = torch.FloatTensor(test_Y).to(device)
+
+# train_dataset = TensorDataset(X_train, y_train)
+# test_dataset = TensorDataset(X_test, y_test)
+# train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+# test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+
+# # Loss function and optimizer
+# criterion = nn.MSELoss()
+# optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+
+# def evaluate_model(model_to_eval, data_loader_eval):
+#     model_to_eval.eval()
+#     eval_total_loss = 0
+#     with torch.no_grad():
+#         for batch_x, batch_Y in data_loader_eval:
+#             batch_outputs = model_to_eval(batch_x)
+#             batch_loss = criterion(batch_outputs.squeeze(), batch_Y)
+#             eval_total_loss += batch_loss.item()
+#     return eval_total_loss / len(data_loader_eval)
+
+# # Training loop
+# num_epochs = 100
+# for epoch in range(num_epochs):
+#     # Training phase
+#     model.train()
+#     total_loss = 0
+#     for batch_X, batch_y in train_loader:
+#         optimizer.zero_grad()
+#         outputs = model(batch_X)
+#         loss = criterion(outputs.squeeze(), batch_y)
+#         loss.backward()
+#         optimizer.step()
+#         total_loss += loss.item()
+    
+#     # Calculate losses
+#     train_loss = total_loss / len(train_loader)
+#     test_loss = evaluate_model(model, test_loader)
+    
+#     # Print epoch statistics
+#     logger.info(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}')
+
+
+############################
+### OLD MILESTONE 2 CODE ###
+############################
+# class ChessDataset(Dataset):
+#     def __init__(self, game_data: pd.DataFrame, only_use_first_X_moves: int | None = None):
+#         """dataset for chess games with normalized features"""
+#         game_data = game_data.dropna()
+#         self.labels = torch.tensor(game_data["Result"].to_numpy(), dtype=torch.float32)
+
+#         # each game has a list of moves -> this function needs to run on each list of moves
+#         def normalize_moves(moves_df):
+#             # normalize evaluation scores
+#             moves_df = moves_df.fillna(0)
+#             scaler = StandardScaler()
+#             moves_df["Eval"] = scaler.fit_transform(moves_df["Eval"].values.reshape(-1, 1)).flatten()
+
+#             # normalize remaining time relative to starting time
+#             initial_time = moves_df["Time"].iloc[0]
+#             moves_df["Time"] = moves_df["Time"] / initial_time
+
+#             # convert board states to tensor representation
+#             moves_df["Board State"] = moves_df.apply(lambda row: board_fen_to_image(row["Board State"]), axis=1)
+#             return moves_df
+
+#         game_data["Moves"] = game_data.apply(lambda row: normalize_moves(row["Moves"]), axis=1)
+
+#         self.board_states = game_data.apply(lambda row: row["Moves"]["Board State"].to_list(), axis=1)
+#         self.moves = game_data.apply(lambda row: row["Moves"].drop(columns=["Board State"]).to_numpy(), axis=1).to_numpy()
+
+#         self.game_metadata = game_data.drop(columns=["Moves", "Result"]).to_numpy()
+
+#         # normalize game metadata features
+#         self.game_metadata = StandardScaler().fit_transform(self.game_metadata)
+
+#         self.move_limit = only_use_first_X_moves
+
+#     def __len__(self) -> int:
+#         return len(self.labels)
+
+#     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+#         board_state_tensor = torch.tensor(np.array(self.board_states[idx]), dtype=torch.float32)
+#         moves = self.moves[idx]
+
+#         # restrict to first X moves if needed
+#         if self.move_limit is not None:
+#             moves = moves[: self.move_limit]
+#             board_state_tensor = board_state_tensor[: self.move_limit]
+
+#         return self.game_metadata[idx], moves, board_state_tensor, self.labels[idx]
+
+
+# class ChessNN(nn.Module):
+#     def __init__(self):
+#         """neural network for chess game outcome prediction
+
+#         architecture:
+#         1. cnn processes board states
+#         2. lstm processes move sequences
+#         3. fully connected layers combine features for final prediction"""
+#         super().__init__()
+
+#         metadata_per_move = len(MOVE_HEADER_NAMES) - 1
+#         metadata_per_game = len(HEADERS_TO_KEEP) - 1
+
+#         # process board states with cnn
+#         self.board_cnn = nn.Sequential(
+#             nn.Conv2d(12, 32, kernel_size=3, padding=1),
+#             nn.BatchNorm2d(32),
+#             nn.ReLU(),
+#             nn.Dropout2d(0.2),
+#             nn.Conv2d(32, 64, kernel_size=3, padding=1),
+#             nn.BatchNorm2d(64),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Dropout2d(0.2),
+#             nn.Conv2d(64, 128, kernel_size=3, padding=1),
+#             nn.BatchNorm2d(128),
+#             nn.ReLU(),
+#             nn.AdaptiveAvgPool2d((2, 2)),
+#         )
+
+#         # project cnn features to lstm input size
+#         self.flatten_cnn_output = nn.Linear(128 * 2 * 2, 256)
+
+#         # process move sequences
+#         self.rnn = nn.LSTM(input_size=256 + metadata_per_move, hidden_size=256, num_layers=2, batch_first=True, bidirectional=True, dropout=0.3)
+
+#         # classification layers
+#         self.fc = nn.Sequential(nn.Linear(256 * 2, 256), nn.ReLU(), nn.Dropout(0.4))
+
+#         # combine with game metadata
+#         self.fc2 = nn.Sequential(nn.Linear(256 + metadata_per_game, 128), nn.ReLU(), nn.Dropout(0.4))
+
+#         # final prediction layer
+#         self.fc3 = nn.Linear(128, 3)
+
+#     def forward(self, game_metadata, moves, board_states, lengths):
+#         batch_size, seq_len, _, _, _ = board_states.size()
+
+#         # process board states
+#         cnn_out = self.board_cnn(board_states.view(-1, 12, 8, 8))
+#         cnn_out = cnn_out.view(batch_size * seq_len, -1)
+#         cnn_out = self.flatten_cnn_output(cnn_out)
+#         cnn_out = cnn_out.view(batch_size, seq_len, -1)
+
+#         # combine cnn features with move data
+#         combined_features = torch.cat((cnn_out, moves), dim=2)
+
+#         # process move sequences
+#         packed_features = pack_padded_sequence(combined_features, lengths.to("cpu"), batch_first=True, enforce_sorted=False)
+#         packed_rnn_out, _ = self.rnn(packed_features)
+#         rnn_out, _ = pad_packed_sequence(packed_rnn_out, batch_first=True)
+
+#         # get final states
+#         idx = (lengths - 1).clone().detach().to(device=rnn_out.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, rnn_out.size(2)).long()
+#         last_rnn_out = rnn_out.gather(1, idx).squeeze(1)
+
+#         # final classification
+#         output = self.fc(last_rnn_out)
+#         output = torch.cat((output, game_metadata), dim=1)
+#         output = self.fc2(output)
+#         output = self.fc3(output)
+
+#         return output
+
+# def test_loss(model: nn.Module, test_loader: DataLoader, loss_function: nn.modules.loss._Loss) -> float:
+#     """calculate average loss on test data"""
+#     model.eval()
+#     test_loss = 0
+
+#     with torch.no_grad():
+#         for data, moves, board_states, target, lengths in test_loader:
+#             # move data to device
+#             data = data.to(device).float()
+#             moves = moves.to(device).float()
+#             board_states = board_states.to(device).float()
+#             lengths = lengths.to(device).float()
+#             target = target.to(device).long()
+
+#             # set model to eval mode and calculate loss
+#             model.eval()
+#             output = model(data, moves, board_states, lengths)
+#             loss = loss_function(output, target.long())
+#             test_loss += loss.item()
+
+#     return test_loss / len(test_loader)
+
+
+# def predict(model: nn.Module, test_loader: DataLoader) -> list[int]:
+#     """generate predictions for test data"""
+#     model.eval()
+#     predictions = []
+
+#     with torch.no_grad():
+#         for data, moves, board_states, target, lengths in test_loader:
+#             # move data to device
+#             data = data.to(device).float()
+#             moves = moves.to(device).float()
+#             board_states = board_states.to(device).float()
+#             lengths = lengths.to(device).float()
+
+#             # set model to eval mode and make prediction
+#             model.eval()
+#             output = model(data, moves, board_states, lengths)
+#             _, predicted = torch.max(output.data, 1)
+#             predictions += predicted.tolist()
+
+#     return predictions
+
+
+# def train(
+#     model: nn.Module,
+#     loss_function: nn.modules.loss._Loss,
+#     train_loader: DataLoader,
+#     test_loader: DataLoader,
+#     epoch: int,
+#     learning_rate: float,
+#     print_every: int,
+# ) -> tuple[list[float], list[float], list[float], list[float]]:
+#     """train model and track metrics"""
+#     train_losses: list[float] = []
+#     test_losses = []
+#     train_accuracy = []
+#     test_accuracy = []
+
+#     # setup optimizer with weight decay for regularization
+#     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+
+#     # reduce learning rate when validation loss plateaus
+#     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+#         optimizer,
+#         mode="min",
+#         factor=0.7,
+#         patience=10,
+#         verbose=True,
+#         min_lr=1e-6,
+#     )
+
+#     for e in range(epoch):
+#         model.train()
+#         current_epoch_train_loss = 0
+
+#         for i, (data, moves, board_states, target, lengths) in enumerate(train_loader):
+#             # move data to device
+#             data = data.to(device).float()
+#             moves = moves.to(device).float()
+#             board_states = board_states.to(device).float()
+#             target = target.to(device).long()
+#             lengths = lengths.to(device).float()
+
+#             optimizer.zero_grad()
+#             output = model(data, moves, board_states, lengths)
+#             loss = loss_function(output, target.long())
+#             loss.backward()
+
+#             # clip gradients to prevent explosion
+#             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+#             optimizer.step()
+
+#             current_epoch_train_loss += loss.item()
+
+#         # calculate metrics
+#         avg_train_loss = current_epoch_train_loss / len(train_loader)
+#         avg_test_loss = test_loss(model, test_loader, loss_function=loss_function)
+
+#         # save metrics for graphing
+#         train_losses.append(avg_train_loss)
+#         test_losses.append(avg_test_loss)
+
+#         train_accuracy.append(
+#             accuracy(
+#                 predict(model, train_loader),
+#                 flatten([label[3] for label in train_loader]),
+#             )
+#         )
+#         test_accuracy.append(
+#             accuracy(
+#                 predict(model, test_loader),
+#                 flatten([label[3] for label in test_loader]),
+#             )
+#         )
+
+#         # reduce learning rate if needed
+#         scheduler.step(avg_test_loss)
+
+#         if e % print_every == 0:
+#             print(f"epoch {e} training loss: {avg_train_loss}")
+#             print(f"epoch {e} testing loss: {avg_test_loss}")
+#             print(f"current learning rate: {optimizer.param_groups[0]['lr']}")
+#             print(f"train accuracy: {train_accuracy[-1]}")
+#             print(f"test accuracy: {test_accuracy[-1]}")
+
+#     # Replace the pickle save with torch.save for the state dict
+#     model_save_path = "model.pt"
+#     torch.save(model.state_dict(), model_save_path)
+#     print(f"Model saved to {model_save_path}")
+
+#     return train_losses, test_losses, train_accuracy, test_accuracy
+
+
+# def accuracy(y_pred, y_test) -> float:
+#     """calculate prediction accuracy"""
+#     y_pred = np.array(y_pred)
+#     y_test = np.array(y_test)
+#     correct = np.sum(y_pred == y_test)
+#     total = len(y_test)
+#     return correct / total if total > 0 else 0
+
+
+# def collate_fn(batch):
+#     """prepare batch data for training"""
+#     # extract components
+#     data = [item[0] for item in batch]
+#     moves = [item[1] for item in batch]
+#     board_states = [item[2] for item in batch]
+#     labels = [item[3] for item in batch]
+
+#     # validate board states
+#     for i, bs in enumerate(board_states):
+#         if len(bs) == 0:
+#             print(f"Warning: board_state at index {i} is empty.")
+#         if any(val is None for row in bs for val in row):
+#             print(f"Warning: board_state at index {i} contains None values.")
+
+#     lengths = torch.tensor([len(bs) for bs in board_states], dtype=torch.int32)
+
+#     # pad sequences and convert to float32
+#     data_padded = pad_sequence([torch.tensor(d, dtype=torch.float32) for d in data], batch_first=True, padding_value=0)
+#     moves_padded = pad_sequence([torch.tensor(m, dtype=torch.float32) for m in moves], batch_first=True, padding_value=0)
+#     board_states_padded = pad_sequence([bs.clone().detach().to(torch.float32) for bs in board_states], batch_first=True, padding_value=0)
+
+#     # combine labels into tensor
+#     labels_stacked = torch.stack([l.clone().detach() for l in labels])
+
+#     return data_padded, moves_padded, board_states_padded, labels_stacked, lengths
+
+
+# def get_data_loaders(game_dataset: ChessDataset, batch_size: int) -> tuple[DataLoader, DataLoader, DataLoader, Subset]:
+
+#     # split data into train/validation/test sets
+#     test_size = int(0.2 * len(game_dataset))  # 20% of total
+#     train_size = len(game_dataset) - test_size
+#     train_data, test_data = random_split(game_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
+
+#     validation_size = int(0.2 * train_size)  # 20% of leftover training (16% of total)
+#     train_size_split = train_size - validation_size
+#     train_set_split, validation_set_split = random_split(train_data, [train_size_split, validation_size], generator=torch.Generator().manual_seed(42))
+
+#     # Organize into loaders for the model
+#     train_loader = DataLoader(train_set_split, batch_size=batch_size, collate_fn=collate_fn)
+#     validation_loader = DataLoader(validation_set_split, batch_size=batch_size, collate_fn=collate_fn)
+#     test_loader = DataLoader(test_data, batch_size=batch_size, collate_fn=collate_fn)
+
+#     return train_loader, validation_loader, test_loader, train_set_split
