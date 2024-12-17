@@ -713,7 +713,7 @@ def plot_training_history(history):
     plt.savefig("training_history.png")
     plt.show()
 
-def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True, LR = 0.001, epochs=10, batch_size=32):
+def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True, LR = 0.001, epochs=100, batch_size=32):
     logger.info(f"Training RNN with {steps_per_game} steps per game")
 
     rnn = ChessRNN(steps_per_game, LR, 0.2, epochs, batch_size)
@@ -730,7 +730,7 @@ def train_rnn(data, steps_per_game, model_name="best_model.keras", plot=True, LR
 
 if __name__ == "__main__":
     # consts
-    size = Sizes.smol
+    size = Sizes.mid
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
