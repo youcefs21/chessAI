@@ -3,7 +3,9 @@
 ## Team Member Roles
 
 Youcef Boumar \- Preprocessing, feature engineering, model creation, tuning, evaluation
+
 Anthony Hunt \- Preprocessing, feature engineering, model creation, training, tuning, evaluation
+
 Muzamil Janjua \- Model creation, input and output visualization, tuning, evaluation
 
 ## Context
